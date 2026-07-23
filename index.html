@@ -27,7 +27,7 @@
         .profit { color: #16a34a; font-weight: bold; }
         .loss { color: #dc2626; font-weight: bold; }
         .subtext { font-size: 0.8rem; color: #6b7280; display: block; margin-top: 2px; }
-        .delete-btn { color: #dc2626; cursor: pointer; border: none; background: none; font-weight: bold; }
+        .delete-btn { color: #dc2626; cursor: pointer; border: none; background: none; font-weight: bold; font-size: 1.1rem; }
     </style>
 </head>
 <body>
@@ -40,8 +40,8 @@
 
     <div class="chart-container">
         <div class="chart-header">
-            <h3>Performance: Portfolio vs S&P 500 (EUR)</h3>
-            <span class="subtext" id="chartStatus">Loading historical data...</span>
+            <h3>Performance: Portfolio vs S&P 500</h3>
+            <span class="subtext" id="chartStatus">Loading...</span>
         </div>
         <canvas id="portfolioChart" height="100"></canvas>
     </div>
@@ -62,7 +62,7 @@
                 <th>Invested (€)</th>
                 <th>Current Value (€)</th>
                 <th>Total P/L</th>
-                <th>Action</th>
+                <th></th>
             </tr>
         </thead>
         <tbody id="portfolioTable"></tbody>
@@ -71,9 +71,12 @@
     <script>
         const API_KEY = "d9h6bp1r01qhv00kvmrgd9h6bp1r01qhv00kvms0"; 
         let portfolio = JSON.parse(localStorage.getItem('myPortfolio')) || [];
-        let myChart = null; // Holds the chart instance
+        let myChart = null; 
 
         window.onload = async function() {
+            // Filter out any corrupted NaN data from previous sessions just in case
+            portfolio = portfolio.filter(s => s && !isNaN(s.currentValue));
+            
             renderTable(); 
             updateDashboard();
             await refreshLivePrices(); 
@@ -90,14 +93,18 @@
                 try {
                     const quoteRes = await fetch(`https://finnhub.io/api/v1/quote?symbol=${portfolio[i].ticker}&token=${API_KEY}`);
                     const quoteData = await quoteRes.json();
-                    let livePrice = quoteData.c;
-
-                    if (livePrice > 0) {
+                    
+                    // Strict validation: Only update if we received a real, positive number
+                    if (quoteData && typeof quoteData.c === 'number' && quoteData.c > 0) {
+                        let livePrice = quoteData.c;
                         let livePriceEur = portfolio[i].ticker.includes('.') ? livePrice : livePrice * usdToEurRate;
+                        
                         portfolio[i].currentValue = portfolio[i].quantity * livePriceEur;
                         portfolio[i].livePriceEur = livePriceEur; 
                     }
-                } catch (error) { console.error("Failed to update " + portfolio[i].ticker); }
+                } catch (error) { 
+                    console.error("Failed to update " + portfolio[i].ticker, error); 
+                }
             }
             saveAndRender();
         }
@@ -106,43 +113,63 @@
             const statusEl = document.getElementById('chartStatus');
             if (portfolio.length === 0) {
                 statusEl.innerText = "Add stocks to see historical performance.";
+                if (myChart) myChart.destroy();
                 return;
             }
             statusEl.innerText = "Syncing historical data...";
 
-            // 1. Find the earliest buy date
             let earliestDate = new Date();
             portfolio.forEach(s => {
                 const bDate = new Date(s.date);
                 if (bDate < earliestDate) earliestDate = bDate;
             });
+
+            // Guarantee the chart has at least a 30-day timeline
+            const thirtyDaysAgo = new Date();
+            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+            if (earliestDate > thirtyDaysAgo) earliestDate = thirtyDaysAgo;
+
             const fromUnix = Math.floor(earliestDate.getTime() / 1000);
             const toUnix = Math.floor(Date.now() / 1000);
 
             try {
-                // 2. Fetch S&P 500 Proxy (SXR8.DE - priced in EUR)
-                const spRes = await fetch(`https://finnhub.io/api/v1/stock/candle?symbol=SXR8.DE&resolution=D&from=${fromUnix}&to=${toUnix}&token=${API_KEY}`);
+                // Fetch US SPY for benchmark (supported on free tier)
+                const spRes = await fetch(`https://finnhub.io/api/v1/stock/candle?symbol=SPY&resolution=D&from=${fromUnix}&to=${toUnix}&token=${API_KEY}`);
                 const spData = await spRes.json();
                 
-                if (spData.s !== "ok") throw new Error("Not enough data yet.");
+                let masterTimestamps = [];
+                let spChartData = [];
 
-                const masterTimestamps = spData.t; 
-                const spBaseline = spData.c[0];
-                const spChartData = spData.c.map(price => ((price - spBaseline) / spBaseline) * 100);
+                if (spData && spData.s === "ok") {
+                    masterTimestamps = spData.t; 
+                    const spBaseline = spData.c[0];
+                    spChartData = spData.c.map(price => ((price - spBaseline) / spBaseline) * 100);
+                } else {
+                    // Fallback timeline if benchmark fails
+                    let d = new Date(earliestDate);
+                    while (d <= new Date()) {
+                        masterTimestamps.push(Math.floor(d.getTime() / 1000));
+                        d.setDate(d.getDate() + 1);
+                    }
+                    spChartData = new Array(masterTimestamps.length).fill(0);
+                }
 
-                // 3. Fetch histories for portfolio stocks
                 const stockHistories = {};
                 const fxRes = await fetch('https://open.er-api.com/v6/latest/USD');
                 const fxData = await fxRes.json();
                 const usdToEurRate = fxData.rates.EUR;
 
+                // Fetch history only for stocks we own
                 for (let stock of portfolio) {
-                    const res = await fetch(`https://finnhub.io/api/v1/stock/candle?symbol=${stock.ticker}&resolution=D&from=${fromUnix}&to=${toUnix}&token=${API_KEY}`);
-                    const data = await res.json();
-                    if (data.s === "ok") stockHistories[stock.ticker] = data;
+                    try {
+                        const res = await fetch(`https://finnhub.io/api/v1/stock/candle?symbol=${stock.ticker}&resolution=D&from=${fromUnix}&to=${toUnix}&token=${API_KEY}`);
+                        const data = await res.json();
+                        if (data && data.s === "ok") stockHistories[stock.ticker] = data;
+                    } catch (e) {
+                        // Ignore individual asset failures (common for EU stocks on free tier)
+                    }
                 }
 
-                // 4. Calculate Daily Portfolio % Return
                 const portfolioChartData = [];
                 const labels = [];
 
@@ -152,22 +179,26 @@
 
                     let dailyInvested = 0;
                     let dailyValue = 0;
+                    const isLastDay = (i === masterTimestamps.length - 1);
 
                     portfolio.forEach(stock => {
                         const buyUnix = new Date(stock.date).getTime() / 1000;
-                        // Only calculate if the stock was bought on or before this timeline day
+                        
                         if (buyUnix <= currentUnix + 86400) { 
                             dailyInvested += stock.invested; 
+                            let dayPrice = stock.buyPrice; // Default fallback to purchase price
                             
-                            let dayPrice = stock.buyPrice; // Default to what you paid
-                            const history = stockHistories[stock.ticker];
-                            
-                            if (history) {
-                                // Find closest price in history array
-                                const index = history.t.findIndex(t => t >= currentUnix);
-                                if (index !== -1) {
-                                    let rawPrice = history.c[index];
-                                    dayPrice = stock.ticker.includes('.') ? rawPrice : rawPrice * usdToEurRate;
+                            if (isLastDay && stock.livePriceEur) {
+                                // Guarantee the last point matches the live dashboard
+                                dayPrice = stock.livePriceEur;
+                            } else {
+                                const history = stockHistories[stock.ticker];
+                                if (history) {
+                                    const index = history.t.findIndex(t => t >= currentUnix);
+                                    if (index !== -1) {
+                                        let rawPrice = history.c[index];
+                                        dayPrice = stock.ticker.includes('.') ? rawPrice : rawPrice * usdToEurRate;
+                                    }
                                 }
                             }
                             dailyValue += (dayPrice * stock.quantity);
@@ -181,18 +212,18 @@
                     }
                 }
 
-                // 5. Draw the Chart
                 drawChart(labels, portfolioChartData, spChartData);
                 statusEl.innerText = "Up to date";
 
             } catch (error) {
-                statusEl.innerText = "Chart unavailable: " + error.message;
+                statusEl.innerText = "Chart unavailable temporarily.";
+                console.error(error);
             }
         }
 
         function drawChart(labels, portData, spData) {
             const ctx = document.getElementById('portfolioChart').getContext('2d');
-            if (myChart) myChart.destroy(); // Remove old chart before drawing new one
+            if (myChart) myChart.destroy(); 
 
             myChart = new Chart(ctx, {
                 type: 'line',
@@ -200,7 +231,7 @@
                     labels: labels,
                     datasets: [
                         { label: 'My Portfolio (%)', data: portData, borderColor: '#2563eb', backgroundColor: 'rgba(37, 99, 235, 0.1)', fill: true, tension: 0.1 },
-                        { label: 'S&P 500 EUR (%)', data: spData, borderColor: '#9ca3af', borderDash: [5, 5], tension: 0.1 }
+                        { label: 'S&P 500 Proxy (%)', data: spData, borderColor: '#9ca3af', borderDash: [5, 5], tension: 0.1 }
                     ]
                 },
                 options: { 
@@ -218,7 +249,10 @@
             const quantity = parseFloat(document.getElementById('qtyInput').value);
             const buyPriceEur = parseFloat(document.getElementById('priceInput').value);
 
-            if (!isin || !buyDate || isNaN(quantity) || isNaN(buyPriceEur)) return alert("Fill out all fields.");
+            // 1. Strict Input Validation
+            if (!isin || !buyDate || isNaN(quantity) || isNaN(buyPriceEur) || quantity <= 0 || buyPriceEur <= 0) {
+                return alert("Please enter valid positive numbers and fill all fields.");
+            }
 
             const btn = document.getElementById('addBtn');
             btn.innerText = "Loading..."; btn.disabled = true;
@@ -226,16 +260,20 @@
             try {
                 const searchRes = await fetch(`https://finnhub.io/api/v1/search?q=${isin}&token=${API_KEY}`);
                 const searchData = await searchRes.json();
-                if (!searchData.result || searchData.result.length === 0) throw new Error("ISIN not found.");
+                if (!searchData.result || searchData.result.length === 0) throw new Error("Could not find a stock matching this ISIN.");
                 
                 const ticker = searchData.result[0].symbol;
                 const companyName = searchData.result[0].description;
 
                 const quoteRes = await fetch(`https://finnhub.io/api/v1/quote?symbol=${ticker}&token=${API_KEY}`);
                 const quoteData = await quoteRes.json();
-                let livePrice = quoteData.c;
-                if (livePrice === 0) throw new Error("Live price unavailable.");
+                
+                // 2. Strict Price Validation
+                if (!quoteData || typeof quoteData.c !== 'number' || quoteData.c <= 0) {
+                    throw new Error("Live price unavailable. The API may restrict this asset on the free tier.");
+                }
 
+                let livePrice = quoteData.c;
                 let livePriceEur = livePrice;
                 if (!ticker.includes('.')) {
                     const fxRes = await fetch('https://open.er-api.com/v6/latest/USD');
@@ -257,8 +295,9 @@
                 });
 
                 saveAndRender();
-                await buildHistoricalChart(); // Rebuild chart with new stock
+                await buildHistoricalChart(); 
 
+                // Reset fields
                 document.getElementById('isinInput').value = ''; document.getElementById('dateInput').value = '';
                 document.getElementById('qtyInput').value = ''; document.getElementById('priceInput').value = '';
 
@@ -272,7 +311,7 @@
         function removeStock(id) {
             portfolio = portfolio.filter(stock => stock.id !== id);
             saveAndRender();
-            buildHistoricalChart(); // Rebuild chart without stock
+            buildHistoricalChart(); 
         }
 
         function saveAndRender() {
