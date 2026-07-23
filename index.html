@@ -106,16 +106,7 @@
         let currentTimeframe = 'ALL';
 
         window.onload = async function() {
-            // Self-Healing Mechanism: Aggressively filter out any corrupted or null data
-            portfolio = portfolio.filter(s => {
-                return s !== null && 
-                       typeof s === 'object' &&
-                       s.ticker && 
-                       s.buyPrice != null && !isNaN(s.buyPrice) &&
-                       s.currentValue != null && !isNaN(s.currentValue) &&
-                       s.invested != null && !isNaN(s.invested);
-            });
-            // Save the cleaned portfolio back to storage immediately
+            portfolio = portfolio.filter(s => s && typeof s === 'object' && s.ticker && !isNaN(s.currentValue));
             localStorage.setItem('myPortfolio', JSON.stringify(portfolio));
             
             renderTable(); 
@@ -194,6 +185,7 @@
             const toUnix = Math.floor(Date.now() / 1000);
 
             try {
+                // 1. Get Benchmark Data
                 const spRes = await fetch(`https://finnhub.io/api/v1/stock/candle?symbol=SPY&resolution=D&from=${fromUnix}&to=${toUnix}&token=${API_KEY}`);
                 const spData = await spRes.json();
                 
@@ -213,6 +205,7 @@
                     spChartData = new Array(masterTimestamps.length).fill(0);
                 }
 
+                // 2. Get Portfolio Historical Data
                 const stockHistories = {};
                 const fxRes = await fetch('https://open.er-api.com/v6/latest/USD');
                 const fxData = await fxRes.json();
@@ -226,7 +219,8 @@
                     } catch (e) {}
                 }
 
-                const portfolioChartData = [];
+                // 3. Process Data with Forward-Filling & Interpolation
+                const rawPortfolioPercentages = [];
                 const labels = [];
 
                 for (let i = 0; i < masterTimestamps.length; i++) {
@@ -235,7 +229,6 @@
 
                     let dailyInvested = 0;
                     let dailyValue = 0;
-                    const isLastDay = (i === masterTimestamps.length - 1);
 
                     portfolio.forEach(stock => {
                         const buyUnix = new Date(stock.date).getTime() / 1000;
@@ -243,30 +236,64 @@
                             dailyInvested += Number(stock.invested || 0); 
                             let dayPrice = Number(stock.buyPrice || 0); 
                             
-                            if (isLastDay && stock.livePriceEur) {
-                                dayPrice = stock.livePriceEur;
-                            } else {
-                                const history = stockHistories[stock.ticker];
-                                if (history) {
-                                    const index = history.t.findIndex(t => t >= currentUnix);
-                                    if (index !== -1) {
-                                        let rawPrice = history.c[index];
-                                        dayPrice = stock.ticker.includes('.') ? rawPrice : rawPrice * usdToEurRate;
+                            const history = stockHistories[stock.ticker];
+                            let lastKnownPrice = -1;
+                            
+                            if (history && history.t) {
+                                // Find the closest historical price on or before this day
+                                for (let j = history.t.length - 1; j >= 0; j--) {
+                                    if (history.t[j] <= currentUnix + 86400) {
+                                        lastKnownPrice = history.c[j];
+                                        break;
                                     }
                                 }
                             }
+
+                            if (lastKnownPrice !== -1) {
+                                dayPrice = stock.ticker.includes('.') ? lastKnownPrice : lastKnownPrice * usdToEurRate;
+                            } else {
+                                // Missing history (EU stocks): Interpolate a smooth line to today
+                                const totalDays = (Date.now() / 1000 - buyUnix) / 86400;
+                                const daysPassed = (currentUnix - buyUnix) / 86400;
+                                if (totalDays > 0 && daysPassed > 0) {
+                                    const targetPrice = stock.livePriceEur || dayPrice;
+                                    const priceDiff = targetPrice - Number(stock.buyPrice || 0);
+                                    const progress = Math.min(daysPassed / totalDays, 1);
+                                    dayPrice = Number(stock.buyPrice || 0) + (priceDiff * progress);
+                                }
+                            }
+
+                            // Ensure the very last point perfectly matches the live dashboard
+                            if (i === masterTimestamps.length - 1 && stock.livePriceEur) {
+                                dayPrice = stock.livePriceEur;
+                            }
+
                             dailyValue += (dayPrice * Number(stock.quantity || 0));
                         }
                     });
 
                     if (dailyInvested > 0) {
-                        portfolioChartData.push(((dailyValue - dailyInvested) / dailyInvested) * 100);
+                        rawPortfolioPercentages.push(((dailyValue - dailyInvested) / dailyInvested) * 100);
                     } else {
-                        portfolioChartData.push(0);
+                        rawPortfolioPercentages.push(null);
                     }
                 }
 
-                drawLineChart(labels, portfolioChartData, spChartData);
+                // 4. Normalization (Locking the start of the timeframe to 0%)
+                let startingPercent = 0;
+                for (let p of rawPortfolioPercentages) {
+                    if (p !== null) {
+                        startingPercent = p;
+                        break;
+                    }
+                }
+
+                const finalPortfolioData = rawPortfolioPercentages.map(p => {
+                    if (p === null) return 0;
+                    return p - startingPercent;
+                });
+
+                drawLineChart(labels, finalPortfolioData, spChartData);
                 statusEl.innerText = "Up to date";
 
             } catch (error) {
@@ -341,8 +368,7 @@
                             }
                         }
                     }
-                }
-            });
+                });
         }
 
         async function addStock() {
