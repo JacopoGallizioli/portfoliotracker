@@ -3,31 +3,43 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>My Portfolio Tracker</title>
+    <title>Live Portfolio Tracker</title>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 2rem; max-width: 1000px; margin: 0 auto; background-color: #f9fafb; color: #111827; }
+        
+        /* Dashboard Summary Styles */
+        .summary-card { background: linear-gradient(135deg, #1e3a8a, #2563eb); color: white; padding: 2rem; border-radius: 8px; margin-bottom: 2rem; box-shadow: 0 4px 6px rgba(0,0,0,0.1); text-align: center; }
+        .summary-card h2 { margin: 0; font-size: 2.5rem; }
+        .summary-card p { margin-top: 0.5rem; font-size: 1.2rem; opacity: 0.9; }
+        
         .card { background: white; padding: 1.5rem; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 2rem; display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
         input { padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 4px; flex: 1; min-width: 150px; }
         button { padding: 0.5rem 1rem; background-color: #2563eb; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; white-space: nowrap; }
         button:hover { background-color: #1d4ed8; }
+        button:disabled { background-color: #9ca3af; cursor: not-allowed; }
+        
         table { width: 100%; border-collapse: collapse; background: white; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border-radius: 8px; overflow: hidden; font-size: 0.9rem; }
         th, td { text-align: left; padding: 1rem; border-bottom: 1px solid #e5e7eb; }
         th { background-color: #f3f4f6; }
         .profit { color: #16a34a; font-weight: bold; }
         .loss { color: #dc2626; font-weight: bold; }
-        .subtext { font-size: 0.8rem; color: #6b7280; display: block; }
+        .subtext { font-size: 0.8rem; color: #6b7280; display: block; margin-top: 2px; }
     </style>
 </head>
 <body>
 
-    <h1>Portfolio Tracker</h1>
+    <div class="summary-card">
+        <div>Total Portfolio Value</div>
+        <h2 id="totalPortfolioValue">€0.00</h2>
+        <p>Total P/L: <span id="totalPortfolioPL">€0.00</span></p>
+    </div>
     
     <div class="card">
         <input type="text" id="isinInput" placeholder="ISIN (e.g. US0378331005)" required>
         <input type="date" id="dateInput" required>
         <input type="number" id="qtyInput" placeholder="Quantity" step="any" required>
-        <input type="number" id="priceInput" placeholder="Buy Price ($)" step="any" required>
-        <button onclick="addStock()">Add to Portfolio</button>
+        <input type="number" id="priceInput" placeholder="Buy Price (€)" step="any" required>
+        <button id="addBtn" onclick="addStock()">Add to Portfolio</button>
     </div>
 
     <table>
@@ -35,8 +47,8 @@
             <tr>
                 <th>Asset</th>
                 <th>Purchase Info</th>
-                <th>Invested</th>
-                <th>Current Value</th>
+                <th>Invested (€)</th>
+                <th>Current Value (€)</th>
                 <th>Total P/L</th>
             </tr>
         </thead>
@@ -46,71 +58,149 @@
     </table>
 
     <script>
-        // Mock database to translate ISINs into Company Names
-        const isinDatabase = {
-            "US0378331005": "Apple Inc.",
-            "US5949181045": "Microsoft Corp.",
-            "US88160R1014": "Tesla Inc."
-        };
+        // --- PASTE YOUR FINNHUB API KEY HERE ---
+        const API_KEY = "d9h6bp1r01qhv00kvmrgd9h6bp1r01qhv00kvms0"; 
+        
+        // This array will hold our stock data so we can calculate the total portfolio value
+        let portfolio = [];
 
-        function addStock() {
+        async function addStock() {
             const isin = document.getElementById('isinInput').value.trim().toUpperCase();
             const buyDate = document.getElementById('dateInput').value;
             const quantity = parseFloat(document.getElementById('qtyInput').value);
-            const buyPrice = parseFloat(document.getElementById('priceInput').value);
+            const buyPriceEur = parseFloat(document.getElementById('priceInput').value); // Assuming user inputs purchase price in Euros
 
-            if (!isin || !buyDate || isNaN(quantity) || isNaN(buyPrice)) {
+            if (!isin || !buyDate || isNaN(quantity) || isNaN(buyPriceEur)) {
                 alert("Please fill out all fields correctly.");
                 return;
             }
 
-            // 1. Look up the company name, or create a fallback name
-            const companyName = isinDatabase[isin] || "Unknown Corp (" + isin.substring(0, 4) + "...)";
+            // Change button state so the user knows it is loading
+            const btn = document.getElementById('addBtn');
+            btn.innerText = "Loading...";
+            btn.disabled = true;
 
-            // 2. Generate a fake current price (randomly +/- 20% from buy price)
-            const randomFluctuation = (Math.random() * 0.4) - 0.2; 
-            const currentPrice = buyPrice * (1 + randomFluctuation);
+            try {
+                // 1. Search Finnhub for the ISIN to get the Ticker Symbol
+                const searchRes = await fetch(`https://finnhub.io/api/v1/search?q=${isin}&token=${API_KEY}`);
+                const searchData = await searchRes.json();
+                
+                if (!searchData.result || searchData.result.length === 0) {
+                    throw new Error("Could not find a stock matching this ISIN.");
+                }
+                
+                const ticker = searchData.result[0].symbol;
+                const companyName = searchData.result[0].description;
 
-            // 3. Calculate portfolio math
-            const totalInvested = quantity * buyPrice;
-            const currentValue = quantity * currentPrice;
-            const profitLossDollars = currentValue - totalInvested;
-            const profitLossPercent = (profitLossDollars / totalInvested) * 100;
-            
-            // 4. Formatting colors
-            const colorClass = profitLossDollars >= 0 ? "profit" : "loss";
-            const sign = profitLossDollars >= 0 ? "+" : "";
+                // 2. Fetch the Live Price using the Ticker
+                const quoteRes = await fetch(`https://finnhub.io/api/v1/quote?symbol=${ticker}&token=${API_KEY}`);
+                const quoteData = await quoteRes.json();
+                let livePrice = quoteData.c; // 'c' stands for Current price in Finnhub
 
-            // 5. Build the table row
+                if (livePrice === 0) {
+                    throw new Error("Live price not available for this asset.");
+                }
+
+                // 3. Currency Conversion (If it is a US stock, convert USD to EUR)
+                // American tickers on Finnhub usually don't have a dot (e.g., AAPL), European ones do (e.g., BMW.DE)
+                let livePriceEur = livePrice;
+                if (!ticker.includes('.')) {
+                    const fxRes = await fetch('https://open.er-api.com/v6/latest/USD');
+                    const fxData = await fxRes.json();
+                    const usdToEurRate = fxData.rates.EUR;
+                    livePriceEur = livePrice * usdToEurRate;
+                }
+
+                // 4. Calculate Math for this specific stock
+                const totalInvested = quantity * buyPriceEur;
+                const currentValue = quantity * livePriceEur;
+                
+                // 5. Save to our portfolio array
+                portfolio.push({
+                    isin: isin,
+                    ticker: ticker,
+                    name: companyName,
+                    date: buyDate,
+                    quantity: quantity,
+                    buyPrice: buyPriceEur,
+                    invested: totalInvested,
+                    currentValue: currentValue
+                });
+
+                // 6. Update the interface
+                renderTable();
+                updateDashboard();
+
+                // Clear inputs for the next entry
+                document.getElementById('isinInput').value = '';
+                document.getElementById('dateInput').value = '';
+                document.getElementById('qtyInput').value = '';
+                document.getElementById('priceInput').value = '';
+
+            } catch (error) {
+                alert("Error: " + error.message);
+            } finally {
+                // Reset the button regardless of success or failure
+                btn.innerText = "Add to Portfolio";
+                btn.disabled = false;
+            }
+        }
+
+        function renderTable() {
             const tableBody = document.getElementById('portfolioTable');
-            const newRow = `
-                <tr>
-                    <td>
-                        <strong>${companyName}</strong>
-                        <span class="subtext">${isin}</span>
-                    </td>
-                    <td>
-                        ${buyDate}
-                        <span class="subtext">${quantity} shares @ $${buyPrice.toFixed(2)}</span>
-                    </td>
-                    <td>$${totalInvested.toFixed(2)}</td>
-                    <td>
-                        $${currentValue.toFixed(2)}
-                        <span class="subtext">Live: $${currentPrice.toFixed(2)}/sh</span>
-                    </td>
-                    <td class="${colorClass}">
-                        ${sign}$${profitLossDollars.toFixed(2)}
-                        <span class="subtext ${colorClass}">${sign}${profitLossPercent.toFixed(2)}%</span>
-                    </td>
-                </tr>
-            `;
-            tableBody.innerHTML += newRow;
+            tableBody.innerHTML = ''; // Clear out the old rows
 
-            // Clear the inputs
-            document.getElementById('isinInput').value = '';
-            document.getElementById('dateInput').value = '';
-            document.getElementById('qtyInput').value = '';
-            document.getElementById('priceInput').value = '';
+            portfolio.forEach(stock => {
+                const profitLossDollars = stock.currentValue - stock.invested;
+                const profitLossPercent = (profitLossDollars / stock.invested) * 100;
+                
+                const colorClass = profitLossDollars >= 0 ? "profit" : "loss";
+                const sign = profitLossDollars >= 0 ? "+" : "";
+
+                const row = `
+                    <tr>
+                        <td>
+                            <strong>${stock.name}</strong>
+                            <span class="subtext">${stock.ticker} (${stock.isin})</span>
+                        </td>
+                        <td>
+                            ${stock.date}
+                            <span class="subtext">${stock.quantity} shares @ €${stock.buyPrice.toFixed(2)}</span>
+                        </td>
+                        <td>€${stock.invested.toFixed(2)}</td>
+                        <td>
+                            €${stock.currentValue.toFixed(2)}
+                            <span class="subtext">Live: €${(stock.currentValue / stock.quantity).toFixed(2)}/sh</span>
+                        </td>
+                        <td class="${colorClass}">
+                            ${sign}€${profitLossDollars.toFixed(2)}
+                            <span class="subtext ${colorClass}">${sign}${profitLossPercent.toFixed(2)}%</span>
+                        </td>
+                    </tr>
+                `;
+                tableBody.innerHTML += row;
+            });
+        }
+
+        function updateDashboard() {
+            let grandTotalInvested = 0;
+            let grandTotalValue = 0;
+
+            portfolio.forEach(stock => {
+                grandTotalInvested += stock.invested;
+                grandTotalValue += stock.currentValue;
+            });
+
+            const totalPL = grandTotalValue - grandTotalInvested;
+            const colorClass = totalPL >= 0 ? "#16a34a" : "#dc2626"; /* Green or Red */
+            const sign = totalPL >= 0 ? "+" : "";
+
+            document.getElementById('totalPortfolioValue').innerText = `€${grandTotalValue.toFixed(2)}`;
+            
+            const plElement = document.getElementById('totalPortfolioPL');
+            plElement.innerText = `${sign}€${totalPL.toFixed(2)}`;
+            plElement.style.color = colorClass;
+            plElement.style.fontWeight = "bold";
         }
     </script>
 </body>
