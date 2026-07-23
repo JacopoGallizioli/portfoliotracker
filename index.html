@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Live Portfolio Tracker</title>
-    <!-- Importing Chart.js for our graphs -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 2rem; max-width: 1000px; margin: 0 auto; background-color: #f9fafb; color: #111827; }
@@ -15,9 +14,7 @@
         
         .chart-container { background: white; padding: 1.5rem; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 2rem; }
         .chart-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
-        .timeframe-btns button { padding: 0.25rem 0.75rem; margin-left: 0.5rem; border: 1px solid #d1d5db; background: white; border-radius: 4px; cursor: pointer; }
-        .timeframe-btns button.active { background: #2563eb; color: white; border-color: #2563eb; }
-
+        
         .card { background: white; padding: 1.5rem; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 2rem; display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
         input { padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 4px; flex: 1; min-width: 150px; }
         button.primary { padding: 0.5rem 1rem; background-color: #2563eb; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; white-space: nowrap; }
@@ -41,18 +38,12 @@
         <p>Total P/L: <span id="totalPortfolioPL">€0.00</span></p>
     </div>
 
-    <!-- New Chart Section -->
     <div class="chart-container">
         <div class="chart-header">
-            <h3>Portfolio vs S&P 500 (Coming Soon)</h3>
-            <div class="timeframe-btns">
-                <button class="active">1M</button>
-                <button>6M</button>
-                <button>1Y</button>
-                <button>ALL</button>
-            </div>
+            <h3>Performance: Portfolio vs S&P 500 (EUR)</h3>
+            <span class="subtext" id="chartStatus">Loading historical data...</span>
         </div>
-        <canvas id="portfolioChart" height="80"></canvas>
+        <canvas id="portfolioChart" height="100"></canvas>
     </div>
     
     <div class="card">
@@ -74,34 +65,27 @@
                 <th>Action</th>
             </tr>
         </thead>
-        <tbody id="portfolioTable">
-            <!-- Data will appear here -->
-        </tbody>
+        <tbody id="portfolioTable"></tbody>
     </table>
 
     <script>
         const API_KEY = "d9h6bp1r01qhv00kvmrgd9h6bp1r01qhv00kvms0"; 
-        
-        // Load portfolio from local storage, or start empty
         let portfolio = JSON.parse(localStorage.getItem('myPortfolio')) || [];
+        let myChart = null; // Holds the chart instance
 
-        // Run this function immediately when the page loads
         window.onload = async function() {
-            renderTable(); // Show saved data immediately
+            renderTable(); 
             updateDashboard();
-            initChart();   // Draw the placeholder chart
-            await refreshLivePrices(); // Go fetch new prices in the background
+            await refreshLivePrices(); 
+            await buildHistoricalChart();
         }
 
         async function refreshLivePrices() {
             if (portfolio.length === 0) return;
-
-            // Fetch current USD to EUR rate once for the whole refresh
             const fxRes = await fetch('https://open.er-api.com/v6/latest/USD');
             const fxData = await fxRes.json();
             const usdToEurRate = fxData.rates.EUR;
 
-            // Loop through our saved stocks and update them
             for (let i = 0; i < portfolio.length; i++) {
                 try {
                     const quoteRes = await fetch(`https://finnhub.io/api/v1/quote?symbol=${portfolio[i].ticker}&token=${API_KEY}`);
@@ -111,14 +95,121 @@
                     if (livePrice > 0) {
                         let livePriceEur = portfolio[i].ticker.includes('.') ? livePrice : livePrice * usdToEurRate;
                         portfolio[i].currentValue = portfolio[i].quantity * livePriceEur;
-                        portfolio[i].livePriceEur = livePriceEur; // Store the unit price
+                        portfolio[i].livePriceEur = livePriceEur; 
                     }
-                } catch (error) {
-                    console.error("Failed to update " + portfolio[i].ticker);
-                }
+                } catch (error) { console.error("Failed to update " + portfolio[i].ticker); }
             }
-            
             saveAndRender();
+        }
+
+        async function buildHistoricalChart() {
+            const statusEl = document.getElementById('chartStatus');
+            if (portfolio.length === 0) {
+                statusEl.innerText = "Add stocks to see historical performance.";
+                return;
+            }
+            statusEl.innerText = "Syncing historical data...";
+
+            // 1. Find the earliest buy date
+            let earliestDate = new Date();
+            portfolio.forEach(s => {
+                const bDate = new Date(s.date);
+                if (bDate < earliestDate) earliestDate = bDate;
+            });
+            const fromUnix = Math.floor(earliestDate.getTime() / 1000);
+            const toUnix = Math.floor(Date.now() / 1000);
+
+            try {
+                // 2. Fetch S&P 500 Proxy (SXR8.DE - priced in EUR)
+                const spRes = await fetch(`https://finnhub.io/api/v1/stock/candle?symbol=SXR8.DE&resolution=D&from=${fromUnix}&to=${toUnix}&token=${API_KEY}`);
+                const spData = await spRes.json();
+                
+                if (spData.s !== "ok") throw new Error("Not enough data yet.");
+
+                const masterTimestamps = spData.t; 
+                const spBaseline = spData.c[0];
+                const spChartData = spData.c.map(price => ((price - spBaseline) / spBaseline) * 100);
+
+                // 3. Fetch histories for portfolio stocks
+                const stockHistories = {};
+                const fxRes = await fetch('https://open.er-api.com/v6/latest/USD');
+                const fxData = await fxRes.json();
+                const usdToEurRate = fxData.rates.EUR;
+
+                for (let stock of portfolio) {
+                    const res = await fetch(`https://finnhub.io/api/v1/stock/candle?symbol=${stock.ticker}&resolution=D&from=${fromUnix}&to=${toUnix}&token=${API_KEY}`);
+                    const data = await res.json();
+                    if (data.s === "ok") stockHistories[stock.ticker] = data;
+                }
+
+                // 4. Calculate Daily Portfolio % Return
+                const portfolioChartData = [];
+                const labels = [];
+
+                for (let i = 0; i < masterTimestamps.length; i++) {
+                    const currentUnix = masterTimestamps[i];
+                    labels.push(new Date(currentUnix * 1000).toLocaleDateString());
+
+                    let dailyInvested = 0;
+                    let dailyValue = 0;
+
+                    portfolio.forEach(stock => {
+                        const buyUnix = new Date(stock.date).getTime() / 1000;
+                        // Only calculate if the stock was bought on or before this timeline day
+                        if (buyUnix <= currentUnix + 86400) { 
+                            dailyInvested += stock.invested; 
+                            
+                            let dayPrice = stock.buyPrice; // Default to what you paid
+                            const history = stockHistories[stock.ticker];
+                            
+                            if (history) {
+                                // Find closest price in history array
+                                const index = history.t.findIndex(t => t >= currentUnix);
+                                if (index !== -1) {
+                                    let rawPrice = history.c[index];
+                                    dayPrice = stock.ticker.includes('.') ? rawPrice : rawPrice * usdToEurRate;
+                                }
+                            }
+                            dailyValue += (dayPrice * stock.quantity);
+                        }
+                    });
+
+                    if (dailyInvested > 0) {
+                        portfolioChartData.push(((dailyValue - dailyInvested) / dailyInvested) * 100);
+                    } else {
+                        portfolioChartData.push(0);
+                    }
+                }
+
+                // 5. Draw the Chart
+                drawChart(labels, portfolioChartData, spChartData);
+                statusEl.innerText = "Up to date";
+
+            } catch (error) {
+                statusEl.innerText = "Chart unavailable: " + error.message;
+            }
+        }
+
+        function drawChart(labels, portData, spData) {
+            const ctx = document.getElementById('portfolioChart').getContext('2d');
+            if (myChart) myChart.destroy(); // Remove old chart before drawing new one
+
+            myChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        { label: 'My Portfolio (%)', data: portData, borderColor: '#2563eb', backgroundColor: 'rgba(37, 99, 235, 0.1)', fill: true, tension: 0.1 },
+                        { label: 'S&P 500 EUR (%)', data: spData, borderColor: '#9ca3af', borderDash: [5, 5], tension: 0.1 }
+                    ]
+                },
+                options: { 
+                    responsive: true, 
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    scales: { y: { ticks: { callback: function(value) { return value + '%'; } } } }
+                }
+            });
         }
 
         async function addStock() {
@@ -153,7 +244,7 @@
                 }
 
                 portfolio.push({
-                    id: Date.now(), // Unique ID so we can delete it later
+                    id: Date.now(), 
                     isin: isin,
                     ticker: ticker,
                     name: companyName,
@@ -166,8 +257,8 @@
                 });
 
                 saveAndRender();
+                await buildHistoricalChart(); // Rebuild chart with new stock
 
-                // Clear inputs
                 document.getElementById('isinInput').value = ''; document.getElementById('dateInput').value = '';
                 document.getElementById('qtyInput').value = ''; document.getElementById('priceInput').value = '';
 
@@ -181,6 +272,7 @@
         function removeStock(id) {
             portfolio = portfolio.filter(stock => stock.id !== id);
             saveAndRender();
+            buildHistoricalChart(); // Rebuild chart without stock
         }
 
         function saveAndRender() {
@@ -198,8 +290,6 @@
                 const plPercent = (plDollars / stock.invested) * 100;
                 const color = plDollars >= 0 ? "profit" : "loss";
                 const sign = plDollars >= 0 ? "+" : "";
-
-                // Fallback for livePriceEur if it wasn't saved in older versions
                 const currentUnit = stock.livePriceEur ? stock.livePriceEur : (stock.currentValue / stock.quantity);
 
                 tableBody.innerHTML += `
@@ -227,31 +317,6 @@
             const plElement = document.getElementById('totalPortfolioPL');
             plElement.innerText = `${sign}€${totalPL.toFixed(2)}`;
             plElement.style.color = color;
-        }
-
-        function initChart() {
-            // This is a placeholder chart to ensure the visual layout works.
-            const ctx = document.getElementById('portfolioChart').getContext('2d');
-            new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
-                    datasets: [{
-                        label: 'Portfolio % Return',
-                        data: [0, 2, 1.5, 4, 3.8, 6.2],
-                        borderColor: '#2563eb',
-                        tension: 0.1
-                    },
-                    {
-                        label: 'S&P 500 % Return',
-                        data: [0, 1.2, 2.5, 2.2, 4.5, 5.0],
-                        borderColor: '#9ca3af',
-                        borderDash: [5, 5],
-                        tension: 0.1
-                    }]
-                },
-                options: { responsive: true, maintainAspectRatio: false }
-            });
         }
     </script>
 </body>
