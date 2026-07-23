@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Portfolio Tracker</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 2rem; max-width: 800px; margin: 0 auto; background-color: #f9fafb; color: #111827; }
+        .card { background: white; padding: 1.5rem; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 2rem; }
+        input { padding: 0.5rem; margin-right: 0.5rem; border: 1px solid #d1d5db; border-radius: 4px; }
+        button { padding: 0.5rem 1rem; background-color: #2563eb; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        button:hover { background-color: #1d4ed8; }
+        table { width: 100%; border-collapse: collapse; background: white; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border-radius: 8px; overflow: hidden; }
+        th, td { text-align: left; padding: 1rem; border-bottom: 1px solid #e5e7eb; }
+        th { background-color: #f3f4f6; }
+        .profit { color: #16a34a; font-weight: bold; }
+        .loss { color: #dc2626; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <h1>Portfolio Tracker</h1>
+    
+    <div class="card">
+        <input type="text" id="ticker" placeholder="Ticker (e.g. AAPL)" required>
+        <input type="number" id="buyPrice" placeholder="Purchase Price ($)" required>
+        <button onclick="addStock()">Add Stock</button>
+    </div>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Ticker</th>
+                <th>Buy Price</th>
+                <th>Current Price (Mock)</th>
+                <th>Performance</th>
+            </tr>
+        </thead>
+        <tbody id="portfolioTable">
+            <!-- Data will appear here -->
+        </tbody>
+    </table>
+
+    <script>
+        function addStock() {
+            // 1. Get the values the user typed in
+            const ticker = document.getElementById('ticker').value.toUpperCase();
+            const buyPrice = parseFloat(document.getElementById('buyPrice').value);
+
+            if (!ticker || isNaN(buyPrice)) {
+                alert("Please enter a valid ticker and price.");
+                return;
+            }
+
+            // 2. Generate a fake "live" price just to see the math work
+            // (It will be randomly 20% higher or lower than the buy price)
+            const randomFluctuation = (Math.random() * 0.4) - 0.2; 
+            const currentPrice = buyPrice * (1 + randomFluctuation);
+
+            // 3. Calculate performance percentage
+            const percentChange = ((currentPrice - buyPrice) / buyPrice) * 100;
+            
+            // 4. Determine if it's a profit or loss for coloring
+            let colorClass = "loss";
+            if (percentChange >= 0) {
+                colorClass = "profit";
+            }
+
+            // 5. Add the new row to our table
+            const tableBody = document.getElementById('portfolioTable');
+            const newRow = `
+                <tr>
+                    <td><strong>${ticker}</strong></td>
+                    <td>$${buyPrice.toFixed(2)}</td>
+                    <td>$${currentPrice.toFixed(2)}</td>
+                    <td class="${colorClass}">${percentChange.toFixed(2)}%</td>
+                </tr>
+            `;
+            tableBody.innerHTML += newRow;
+
+            // Clear the input boxes for the next stock
+            document.getElementById('ticker').value = '';
+            document.getElementById('buyPrice').value = '';
+        }
+    </script>
+</body>
+</html>
