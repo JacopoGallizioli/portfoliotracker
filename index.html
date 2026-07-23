@@ -5,16 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>My Portfolio Tracker</title>
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 2rem; max-width: 800px; margin: 0 auto; background-color: #f9fafb; color: #111827; }
-        .card { background: white; padding: 1.5rem; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 2rem; }
-        input { padding: 0.5rem; margin-right: 0.5rem; border: 1px solid #d1d5db; border-radius: 4px; }
-        button { padding: 0.5rem 1rem; background-color: #2563eb; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 2rem; max-width: 1000px; margin: 0 auto; background-color: #f9fafb; color: #111827; }
+        .card { background: white; padding: 1.5rem; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 2rem; display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+        input { padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 4px; flex: 1; min-width: 150px; }
+        button { padding: 0.5rem 1rem; background-color: #2563eb; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; white-space: nowrap; }
         button:hover { background-color: #1d4ed8; }
-        table { width: 100%; border-collapse: collapse; background: white; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border-radius: 8px; overflow: hidden; }
+        table { width: 100%; border-collapse: collapse; background: white; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border-radius: 8px; overflow: hidden; font-size: 0.9rem; }
         th, td { text-align: left; padding: 1rem; border-bottom: 1px solid #e5e7eb; }
         th { background-color: #f3f4f6; }
         .profit { color: #16a34a; font-weight: bold; }
         .loss { color: #dc2626; font-weight: bold; }
+        .subtext { font-size: 0.8rem; color: #6b7280; display: block; }
     </style>
 </head>
 <body>
@@ -22,18 +23,21 @@
     <h1>Portfolio Tracker</h1>
     
     <div class="card">
-        <input type="text" id="ticker" placeholder="Ticker (e.g. AAPL)" required>
-        <input type="number" id="buyPrice" placeholder="Purchase Price ($)" required>
-        <button onclick="addStock()">Add Stock</button>
+        <input type="text" id="isinInput" placeholder="ISIN (e.g. US0378331005)" required>
+        <input type="date" id="dateInput" required>
+        <input type="number" id="qtyInput" placeholder="Quantity" step="any" required>
+        <input type="number" id="priceInput" placeholder="Buy Price ($)" step="any" required>
+        <button onclick="addStock()">Add to Portfolio</button>
     </div>
 
     <table>
         <thead>
             <tr>
-                <th>Ticker</th>
-                <th>Buy Price</th>
-                <th>Current Price (Mock)</th>
-                <th>Performance</th>
+                <th>Asset</th>
+                <th>Purchase Info</th>
+                <th>Invested</th>
+                <th>Current Value</th>
+                <th>Total P/L</th>
             </tr>
         </thead>
         <tbody id="portfolioTable">
@@ -42,45 +46,71 @@
     </table>
 
     <script>
-        function addStock() {
-            // 1. Get the values the user typed in
-            const ticker = document.getElementById('ticker').value.toUpperCase();
-            const buyPrice = parseFloat(document.getElementById('buyPrice').value);
+        // Mock database to translate ISINs into Company Names
+        const isinDatabase = {
+            "US0378331005": "Apple Inc.",
+            "US5949181045": "Microsoft Corp.",
+            "US88160R1014": "Tesla Inc."
+        };
 
-            if (!ticker || isNaN(buyPrice)) {
-                alert("Please enter a valid ticker and price.");
+        function addStock() {
+            const isin = document.getElementById('isinInput').value.trim().toUpperCase();
+            const buyDate = document.getElementById('dateInput').value;
+            const quantity = parseFloat(document.getElementById('qtyInput').value);
+            const buyPrice = parseFloat(document.getElementById('priceInput').value);
+
+            if (!isin || !buyDate || isNaN(quantity) || isNaN(buyPrice)) {
+                alert("Please fill out all fields correctly.");
                 return;
             }
 
-            // 2. Generate a fake "live" price just to see the math work
-            // (It will be randomly 20% higher or lower than the buy price)
+            // 1. Look up the company name, or create a fallback name
+            const companyName = isinDatabase[isin] || "Unknown Corp (" + isin.substring(0, 4) + "...)";
+
+            // 2. Generate a fake current price (randomly +/- 20% from buy price)
             const randomFluctuation = (Math.random() * 0.4) - 0.2; 
             const currentPrice = buyPrice * (1 + randomFluctuation);
 
-            // 3. Calculate performance percentage
-            const percentChange = ((currentPrice - buyPrice) / buyPrice) * 100;
+            // 3. Calculate portfolio math
+            const totalInvested = quantity * buyPrice;
+            const currentValue = quantity * currentPrice;
+            const profitLossDollars = currentValue - totalInvested;
+            const profitLossPercent = (profitLossDollars / totalInvested) * 100;
             
-            // 4. Determine if it's a profit or loss for coloring
-            let colorClass = "loss";
-            if (percentChange >= 0) {
-                colorClass = "profit";
-            }
+            // 4. Formatting colors
+            const colorClass = profitLossDollars >= 0 ? "profit" : "loss";
+            const sign = profitLossDollars >= 0 ? "+" : "";
 
-            // 5. Add the new row to our table
+            // 5. Build the table row
             const tableBody = document.getElementById('portfolioTable');
             const newRow = `
                 <tr>
-                    <td><strong>${ticker}</strong></td>
-                    <td>$${buyPrice.toFixed(2)}</td>
-                    <td>$${currentPrice.toFixed(2)}</td>
-                    <td class="${colorClass}">${percentChange.toFixed(2)}%</td>
+                    <td>
+                        <strong>${companyName}</strong>
+                        <span class="subtext">${isin}</span>
+                    </td>
+                    <td>
+                        ${buyDate}
+                        <span class="subtext">${quantity} shares @ $${buyPrice.toFixed(2)}</span>
+                    </td>
+                    <td>$${totalInvested.toFixed(2)}</td>
+                    <td>
+                        $${currentValue.toFixed(2)}
+                        <span class="subtext">Live: $${currentPrice.toFixed(2)}/sh</span>
+                    </td>
+                    <td class="${colorClass}">
+                        ${sign}$${profitLossDollars.toFixed(2)}
+                        <span class="subtext ${colorClass}">${sign}${profitLossPercent.toFixed(2)}%</span>
+                    </td>
                 </tr>
             `;
             tableBody.innerHTML += newRow;
 
-            // Clear the input boxes for the next stock
-            document.getElementById('ticker').value = '';
-            document.getElementById('buyPrice').value = '';
+            // Clear the inputs
+            document.getElementById('isinInput').value = '';
+            document.getElementById('dateInput').value = '';
+            document.getElementById('qtyInput').value = '';
+            document.getElementById('priceInput').value = '';
         }
     </script>
 </body>
