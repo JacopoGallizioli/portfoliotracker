@@ -6,14 +6,19 @@
     <title>Live Portfolio Tracker</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 2rem; max-width: 1000px; margin: 0 auto; background-color: #f9fafb; color: #111827; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 2rem; max-width: 1200px; margin: 0 auto; background-color: #f9fafb; color: #111827; }
         
         .summary-card { background: linear-gradient(135deg, #1e3a8a, #2563eb); color: white; padding: 2rem; border-radius: 8px; margin-bottom: 2rem; box-shadow: 0 4px 6px rgba(0,0,0,0.1); text-align: center; }
         .summary-card h2 { margin: 0; font-size: 2.5rem; }
         .summary-card p { margin-top: 0.5rem; font-size: 1.2rem; opacity: 0.9; }
         
-        .chart-container { background: white; padding: 1.5rem; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 2rem; }
+        .dashboard-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 2rem; margin-bottom: 2rem; }
+        
+        .chart-container { background: white; padding: 1.5rem; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); display: flex; flex-direction: column;}
         .chart-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+        
+        .timeframe-btns button { padding: 0.25rem 0.75rem; margin-left: 0.25rem; border: 1px solid #d1d5db; background: white; border-radius: 4px; cursor: pointer; font-size: 0.8rem; }
+        .timeframe-btns button.active { background: #2563eb; color: white; border-color: #2563eb; }
         
         .card { background: white; padding: 1.5rem; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 2rem; display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
         input { padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 4px; flex: 1; min-width: 150px; }
@@ -28,6 +33,10 @@
         .loss { color: #dc2626; font-weight: bold; }
         .subtext { font-size: 0.8rem; color: #6b7280; display: block; margin-top: 2px; }
         .delete-btn { color: #dc2626; cursor: pointer; border: none; background: none; font-weight: bold; font-size: 1.1rem; }
+
+        @media (max-width: 768px) {
+            .dashboard-grid { grid-template-columns: 1fr; }
+        }
     </style>
 </head>
 <body>
@@ -38,12 +47,33 @@
         <p>Total P/L: <span id="totalPortfolioPL">€0.00</span></p>
     </div>
 
-    <div class="chart-container">
-        <div class="chart-header">
-            <h3>Performance: Portfolio vs S&P 500</h3>
-            <span class="subtext" id="chartStatus">Loading...</span>
+    <div class="dashboard-grid">
+        <div class="chart-container">
+            <div class="chart-header">
+                <div>
+                    <h3 style="margin: 0;">Performance vs S&P 500</h3>
+                    <span class="subtext" id="chartStatus">Loading...</span>
+                </div>
+                <div class="timeframe-btns" id="timeframeContainer">
+                    <button onclick="changeTimeframe('1M', this)">1M</button>
+                    <button onclick="changeTimeframe('6M', this)">6M</button>
+                    <button onclick="changeTimeframe('1Y', this)">1Y</button>
+                    <button class="active" onclick="changeTimeframe('ALL', this)">ALL</button>
+                </div>
+            </div>
+            <div style="flex-grow: 1; position: relative; min-height: 250px;">
+                <canvas id="portfolioChart"></canvas>
+            </div>
         </div>
-        <canvas id="portfolioChart" height="100"></canvas>
+
+        <div class="chart-container">
+            <div class="chart-header">
+                <h3 style="margin: 0;">Asset Allocation</h3>
+            </div>
+            <div style="flex-grow: 1; position: relative; min-height: 250px; display: flex; justify-content: center; align-items: center;">
+                <canvas id="allocationChart"></canvas>
+            </div>
+        </div>
     </div>
     
     <div class="card">
@@ -71,69 +101,99 @@
     <script>
         const API_KEY = "d9h6bp1r01qhv00kvmrgd9h6bp1r01qhv00kvms0"; 
         let portfolio = JSON.parse(localStorage.getItem('myPortfolio')) || [];
-        let myChart = null; 
+        let lineChart = null; 
+        let doughnutChart = null;
+        let currentTimeframe = 'ALL';
 
         window.onload = async function() {
-            // Filter out any corrupted NaN data from previous sessions just in case
-            portfolio = portfolio.filter(s => s && !isNaN(s.currentValue));
+            // Self-Healing Mechanism: Aggressively filter out any corrupted or null data
+            portfolio = portfolio.filter(s => {
+                return s !== null && 
+                       typeof s === 'object' &&
+                       s.ticker && 
+                       s.buyPrice != null && !isNaN(s.buyPrice) &&
+                       s.currentValue != null && !isNaN(s.currentValue) &&
+                       s.invested != null && !isNaN(s.invested);
+            });
+            // Save the cleaned portfolio back to storage immediately
+            localStorage.setItem('myPortfolio', JSON.stringify(portfolio));
             
             renderTable(); 
             updateDashboard();
+            drawAllocationChart();
             await refreshLivePrices(); 
-            await buildHistoricalChart();
+            await buildHistoricalChart(currentTimeframe);
         }
 
         async function refreshLivePrices() {
             if (portfolio.length === 0) return;
-            const fxRes = await fetch('https://open.er-api.com/v6/latest/USD');
-            const fxData = await fxRes.json();
-            const usdToEurRate = fxData.rates.EUR;
+            
+            try {
+                const fxRes = await fetch('https://open.er-api.com/v6/latest/USD');
+                const fxData = await fxRes.json();
+                const usdToEurRate = fxData.rates.EUR || 1;
 
-            for (let i = 0; i < portfolio.length; i++) {
-                try {
-                    const quoteRes = await fetch(`https://finnhub.io/api/v1/quote?symbol=${portfolio[i].ticker}&token=${API_KEY}`);
-                    const quoteData = await quoteRes.json();
-                    
-                    // Strict validation: Only update if we received a real, positive number
-                    if (quoteData && typeof quoteData.c === 'number' && quoteData.c > 0) {
-                        let livePrice = quoteData.c;
-                        let livePriceEur = portfolio[i].ticker.includes('.') ? livePrice : livePrice * usdToEurRate;
+                for (let i = 0; i < portfolio.length; i++) {
+                    try {
+                        const quoteRes = await fetch(`https://finnhub.io/api/v1/quote?symbol=${portfolio[i].ticker}&token=${API_KEY}`);
+                        const quoteData = await quoteRes.json();
                         
-                        portfolio[i].currentValue = portfolio[i].quantity * livePriceEur;
-                        portfolio[i].livePriceEur = livePriceEur; 
+                        if (quoteData && typeof quoteData.c === 'number' && quoteData.c > 0) {
+                            let livePrice = quoteData.c;
+                            let livePriceEur = portfolio[i].ticker.includes('.') ? livePrice : livePrice * usdToEurRate;
+                            portfolio[i].currentValue = portfolio[i].quantity * livePriceEur;
+                            portfolio[i].livePriceEur = livePriceEur; 
+                        }
+                    } catch (error) { 
+                        console.error("Failed to update " + portfolio[i].ticker); 
                     }
-                } catch (error) { 
-                    console.error("Failed to update " + portfolio[i].ticker, error); 
                 }
+                saveAndRender();
+            } catch (err) {
+                console.error("Currency API failed");
             }
-            saveAndRender();
         }
 
-        async function buildHistoricalChart() {
+        function changeTimeframe(tf, btnElement) {
+            const btns = document.getElementById('timeframeContainer').getElementsByTagName('button');
+            for(let b of btns) b.classList.remove('active');
+            btnElement.classList.add('active');
+            
+            currentTimeframe = tf;
+            buildHistoricalChart(tf);
+        }
+
+        async function buildHistoricalChart(timeframe) {
             const statusEl = document.getElementById('chartStatus');
             if (portfolio.length === 0) {
-                statusEl.innerText = "Add stocks to see historical performance.";
-                if (myChart) myChart.destroy();
+                statusEl.innerText = "Add stocks to see data.";
+                if (lineChart) lineChart.destroy();
                 return;
             }
-            statusEl.innerText = "Syncing historical data...";
+            statusEl.innerText = "Syncing...";
 
-            let earliestDate = new Date();
-            portfolio.forEach(s => {
-                const bDate = new Date(s.date);
-                if (bDate < earliestDate) earliestDate = bDate;
-            });
+            let fromDate = new Date();
+            if (timeframe === '1M') {
+                fromDate.setMonth(fromDate.getMonth() - 1);
+            } else if (timeframe === '6M') {
+                fromDate.setMonth(fromDate.getMonth() - 6);
+            } else if (timeframe === '1Y') {
+                fromDate.setFullYear(fromDate.getFullYear() - 1);
+            } else {
+                let earliest = new Date();
+                portfolio.forEach(s => {
+                    const bDate = new Date(s.date);
+                    if (bDate < earliest) earliest = bDate;
+                });
+                const thirtyDaysAgo = new Date();
+                thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+                fromDate = earliest > thirtyDaysAgo ? thirtyDaysAgo : earliest;
+            }
 
-            // Guarantee the chart has at least a 30-day timeline
-            const thirtyDaysAgo = new Date();
-            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-            if (earliestDate > thirtyDaysAgo) earliestDate = thirtyDaysAgo;
-
-            const fromUnix = Math.floor(earliestDate.getTime() / 1000);
+            const fromUnix = Math.floor(fromDate.getTime() / 1000);
             const toUnix = Math.floor(Date.now() / 1000);
 
             try {
-                // Fetch US SPY for benchmark (supported on free tier)
                 const spRes = await fetch(`https://finnhub.io/api/v1/stock/candle?symbol=SPY&resolution=D&from=${fromUnix}&to=${toUnix}&token=${API_KEY}`);
                 const spData = await spRes.json();
                 
@@ -145,8 +205,7 @@
                     const spBaseline = spData.c[0];
                     spChartData = spData.c.map(price => ((price - spBaseline) / spBaseline) * 100);
                 } else {
-                    // Fallback timeline if benchmark fails
-                    let d = new Date(earliestDate);
+                    let d = new Date(fromDate);
                     while (d <= new Date()) {
                         masterTimestamps.push(Math.floor(d.getTime() / 1000));
                         d.setDate(d.getDate() + 1);
@@ -157,17 +216,14 @@
                 const stockHistories = {};
                 const fxRes = await fetch('https://open.er-api.com/v6/latest/USD');
                 const fxData = await fxRes.json();
-                const usdToEurRate = fxData.rates.EUR;
+                const usdToEurRate = fxData.rates.EUR || 1;
 
-                // Fetch history only for stocks we own
                 for (let stock of portfolio) {
                     try {
                         const res = await fetch(`https://finnhub.io/api/v1/stock/candle?symbol=${stock.ticker}&resolution=D&from=${fromUnix}&to=${toUnix}&token=${API_KEY}`);
                         const data = await res.json();
                         if (data && data.s === "ok") stockHistories[stock.ticker] = data;
-                    } catch (e) {
-                        // Ignore individual asset failures (common for EU stocks on free tier)
-                    }
+                    } catch (e) {}
                 }
 
                 const portfolioChartData = [];
@@ -175,7 +231,7 @@
 
                 for (let i = 0; i < masterTimestamps.length; i++) {
                     const currentUnix = masterTimestamps[i];
-                    labels.push(new Date(currentUnix * 1000).toLocaleDateString());
+                    labels.push(new Date(currentUnix * 1000).toLocaleDateString(undefined, {month: 'short', day: 'numeric'}));
 
                     let dailyInvested = 0;
                     let dailyValue = 0;
@@ -183,13 +239,11 @@
 
                     portfolio.forEach(stock => {
                         const buyUnix = new Date(stock.date).getTime() / 1000;
-                        
                         if (buyUnix <= currentUnix + 86400) { 
-                            dailyInvested += stock.invested; 
-                            let dayPrice = stock.buyPrice; // Default fallback to purchase price
+                            dailyInvested += Number(stock.invested || 0); 
+                            let dayPrice = Number(stock.buyPrice || 0); 
                             
                             if (isLastDay && stock.livePriceEur) {
-                                // Guarantee the last point matches the live dashboard
                                 dayPrice = stock.livePriceEur;
                             } else {
                                 const history = stockHistories[stock.ticker];
@@ -201,7 +255,7 @@
                                     }
                                 }
                             }
-                            dailyValue += (dayPrice * stock.quantity);
+                            dailyValue += (dayPrice * Number(stock.quantity || 0));
                         }
                     });
 
@@ -212,20 +266,19 @@
                     }
                 }
 
-                drawChart(labels, portfolioChartData, spChartData);
+                drawLineChart(labels, portfolioChartData, spChartData);
                 statusEl.innerText = "Up to date";
 
             } catch (error) {
-                statusEl.innerText = "Chart unavailable temporarily.";
-                console.error(error);
+                statusEl.innerText = "Chart unavailable.";
             }
         }
 
-        function drawChart(labels, portData, spData) {
+        function drawLineChart(labels, portData, spData) {
             const ctx = document.getElementById('portfolioChart').getContext('2d');
-            if (myChart) myChart.destroy(); 
+            if (lineChart) lineChart.destroy(); 
 
-            myChart = new Chart(ctx, {
+            lineChart = new Chart(ctx, {
                 type: 'line',
                 data: {
                     labels: labels,
@@ -243,13 +296,61 @@
             });
         }
 
+        function drawAllocationChart() {
+            const ctx = document.getElementById('allocationChart').getContext('2d');
+            if (doughnutChart) doughnutChart.destroy();
+
+            if (portfolio.length === 0) return;
+
+            const allocationMap = {};
+            portfolio.forEach(stock => {
+                if (!allocationMap[stock.ticker]) allocationMap[stock.ticker] = 0;
+                allocationMap[stock.ticker] += Number(stock.currentValue || 0);
+            });
+
+            const labels = Object.keys(allocationMap);
+            const data = Object.values(allocationMap);
+            const bgColors = ['#2563eb', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899'];
+
+            doughnutChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: data,
+                        backgroundColor: bgColors.slice(0, labels.length),
+                        borderWidth: 2,
+                        borderColor: '#ffffff'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'right' },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    let label = context.label || '';
+                                    if (label) label += ': ';
+                                    const total = context.chart._metasets[context.datasetIndex].total;
+                                    const rawVal = Number(context.raw || 0);
+                                    const percentage = Math.round((rawVal / total) * 100) + '%';
+                                    return label + '€' + rawVal.toFixed(2) + ' (' + percentage + ')';
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
         async function addStock() {
             const isin = document.getElementById('isinInput').value.trim().toUpperCase();
             const buyDate = document.getElementById('dateInput').value;
             const quantity = parseFloat(document.getElementById('qtyInput').value);
             const buyPriceEur = parseFloat(document.getElementById('priceInput').value);
 
-            // 1. Strict Input Validation
             if (!isin || !buyDate || isNaN(quantity) || isNaN(buyPriceEur) || quantity <= 0 || buyPriceEur <= 0) {
                 return alert("Please enter valid positive numbers and fill all fields.");
             }
@@ -268,7 +369,6 @@
                 const quoteRes = await fetch(`https://finnhub.io/api/v1/quote?symbol=${ticker}&token=${API_KEY}`);
                 const quoteData = await quoteRes.json();
                 
-                // 2. Strict Price Validation
                 if (!quoteData || typeof quoteData.c !== 'number' || quoteData.c <= 0) {
                     throw new Error("Live price unavailable. The API may restrict this asset on the free tier.");
                 }
@@ -278,7 +378,7 @@
                 if (!ticker.includes('.')) {
                     const fxRes = await fetch('https://open.er-api.com/v6/latest/USD');
                     const fxData = await fxRes.json();
-                    livePriceEur = livePrice * fxData.rates.EUR;
+                    livePriceEur = livePrice * (fxData.rates.EUR || 1);
                 }
 
                 portfolio.push({
@@ -295,9 +395,8 @@
                 });
 
                 saveAndRender();
-                await buildHistoricalChart(); 
+                await buildHistoricalChart(currentTimeframe); 
 
-                // Reset fields
                 document.getElementById('isinInput').value = ''; document.getElementById('dateInput').value = '';
                 document.getElementById('qtyInput').value = ''; document.getElementById('priceInput').value = '';
 
@@ -311,13 +410,14 @@
         function removeStock(id) {
             portfolio = portfolio.filter(stock => stock.id !== id);
             saveAndRender();
-            buildHistoricalChart(); 
+            buildHistoricalChart(currentTimeframe); 
         }
 
         function saveAndRender() {
             localStorage.setItem('myPortfolio', JSON.stringify(portfolio));
             renderTable();
             updateDashboard();
+            drawAllocationChart();
         }
 
         function renderTable() {
@@ -325,18 +425,23 @@
             tableBody.innerHTML = ''; 
 
             portfolio.forEach(stock => {
-                const plDollars = stock.currentValue - stock.invested;
-                const plPercent = (plDollars / stock.invested) * 100;
+                const inv = Number(stock.invested || 0);
+                const cur = Number(stock.currentValue || 0);
+                const qty = Number(stock.quantity || 1);
+                const buy = Number(stock.buyPrice || 0);
+                
+                const plDollars = cur - inv;
+                const plPercent = inv > 0 ? (plDollars / inv) * 100 : 0;
                 const color = plDollars >= 0 ? "profit" : "loss";
                 const sign = plDollars >= 0 ? "+" : "";
-                const currentUnit = stock.livePriceEur ? stock.livePriceEur : (stock.currentValue / stock.quantity);
+                const currentUnit = stock.livePriceEur ? Number(stock.livePriceEur) : (cur / qty);
 
                 tableBody.innerHTML += `
                     <tr>
                         <td><strong>${stock.name}</strong><span class="subtext">${stock.ticker}</span></td>
-                        <td>${stock.date}<span class="subtext">${stock.quantity} sh @ €${stock.buyPrice.toFixed(2)}</span></td>
-                        <td>€${stock.invested.toFixed(2)}</td>
-                        <td>€${stock.currentValue.toFixed(2)}<span class="subtext">Live: €${currentUnit.toFixed(2)}/sh</span></td>
+                        <td>${stock.date}<span class="subtext">${qty} sh @ €${buy.toFixed(2)}</span></td>
+                        <td>€${inv.toFixed(2)}</td>
+                        <td>€${cur.toFixed(2)}<span class="subtext">Live: €${currentUnit.toFixed(2)}/sh</span></td>
                         <td class="${color}">${sign}€${plDollars.toFixed(2)}<span class="subtext ${color}">${sign}${plPercent.toFixed(2)}%</span></td>
                         <td><button class="delete-btn" onclick="removeStock(${stock.id})">✕</button></td>
                     </tr>
@@ -346,7 +451,10 @@
 
         function updateDashboard() {
             let totalInvested = 0; let totalValue = 0;
-            portfolio.forEach(stock => { totalInvested += stock.invested; totalValue += stock.currentValue; });
+            portfolio.forEach(stock => { 
+                totalInvested += Number(stock.invested || 0); 
+                totalValue += Number(stock.currentValue || 0); 
+            });
 
             const totalPL = totalValue - totalInvested;
             const color = totalPL >= 0 ? "#16a34a" : "#dc2626";
