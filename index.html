@@ -252,6 +252,7 @@ input:focus,select:focus,textarea:focus{border-color:var(--gold);box-shadow:0 0 
 
   <!-- ============ DIVIDENDS ============ -->
   <section class="view" id="view-divs">
+    <div class="banner" id="divAlert"></div>
     <div class="kpis" id="divKpis"></div>
     <div class="panel">
       <div class="panel-h"><h2>By position</h2>
@@ -489,7 +490,7 @@ const store=(()=>{
 })();
 
 /* ---------- state ---------- */
-const BUILD='2026-08-01e';
+const BUILD='2026-08-01f';
 const DEFAULTS={provider:'demo',quoteProvider:'none',proxy:'',avKey:'',tdKey:'',fhKey:'',
   benchmark:'',currency:'EUR',fxConvert:1,cashMode:1,cacheHours:12,heatScale:3,autoMin:0,urlSync:1,
   divProvider:'none',v:2};
@@ -1130,7 +1131,12 @@ async function loadDivs(force){
       if(c&&c.t&&(Date.now()-c.t)<7*24*3600*1000&&c.d){DIV[sym]=c.d;return;}
     }
     try{
-      const list=await divSrc().fetchDiv(sym);
+      let list=null;
+      try{ list=await divSrc().fetchDiv(sym); }
+      catch(e1){
+        if(S.divProvider!=='twelvedata'&&S.tdKey){ list=await DivSources.twelvedata.fetchDiv(sym); }
+        else throw e1;
+      }
       list.sort(function(a,b){return a.date<b.date?-1:1;});
       DIV[sym]=list; delete DIV_FAILED[sym];
       store.set(ck,{t:Date.now(),d:list});
@@ -1949,6 +1955,20 @@ function renderDividends(){
     ?(bad.length?('no data for '+bad.join(', ')):'source: '+divSrc().label.toLowerCase())
     :'manual entries only';
   $('#divNote').className=bad.length?'tag warnText':'tag';
+
+  const al=$('#divAlert');
+  if(!divSrc().fetchDiv&&!MDIV.length){
+    al.innerHTML='<b>No dividend source selected</b>Settings \u2192 Dividends is set to manual entry, so nothing is fetched. Choose Yahoo there (and set a CORS proxy), or add payments by hand with <b style="display:inline;font-size:inherit;letter-spacing:0;text-transform:none;color:inherit">+ Add payment</b>.';
+    al.className='banner on';
+  }else if(bad.length){
+    al.innerHTML='<b>Dividend source returned nothing</b>'+
+      Object.keys(DIV_FAILED).map(function(k){return'<code>'+esc(k)+'</code> \u2014 '+esc(DIV_FAILED[k]);}).join('<br>')+
+      '<br>Run the test in Settings \u2192 Connection for the raw error.';
+    al.className='banner on';
+  }else if(divSrc().fetchDiv&&!dividendPayments().length){
+    al.innerHTML='<b>Source reached, but no payments apply</b>The source returned no dividend history for your holdings, or every payment predates your buy date. Non-paying stocks are normal here.';
+    al.className='banner on';
+  }else{al.className='banner';al.innerHTML='';}
 }
 $('#divHist').onclick=function(e){
   const b=e.target.closest('[data-rmdiv]'); if(!b)return;
@@ -2009,7 +2029,17 @@ $('#testBtn').onclick=async function(){
                   :'<span class="warnText">Quotes: source answered but returned no price for that symbol.</span>');
     }catch(e){lines.push('<span class="down">Quotes: '+esc(friendly(e))+'</span>');}
   }else lines.push('Quotes: off.');
-  // 3. plain-language cause
+  // 3. dividend source
+  if(divSrc().fetchDiv){
+    const sym=(POS[0]&&POS[0].symbol)||bench;
+    try{
+      const list=await divSrc().fetchDiv(sym);
+      lines.push(list.length
+        ?'<span class="up">Dividends: reached '+esc(divSrc().label)+', '+list.length+' events for '+esc(sym)+' (latest '+esc(list[list.length-1].date)+').</span>'
+        :'<span class="warnText">Dividends: source answered but listed none for '+esc(sym)+'.</span>');
+    }catch(e){lines.push('<span class="down">Dividends: '+esc(friendly(e))+'</span>');}
+  }else lines.push('Dividends: manual entry only.');
+  // 4. plain-language cause
   if(histErr===BLOCKED_MSG){
     lines.push('<br>Nothing left this browser. Usual causes, in order:');
     lines.push('1. This page is inside a sandboxed preview frame. Open the file in a normal browser tab or serve it over http.');
