@@ -1,497 +1,1345 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Live Portfolio Tracker</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 2rem; max-width: 1200px; margin: 0 auto; background-color: #f9fafb; color: #111827; }
-        
-        .summary-card { background: linear-gradient(135deg, #1e3a8a, #2563eb); color: white; padding: 2rem; border-radius: 8px; margin-bottom: 2rem; box-shadow: 0 4px 6px rgba(0,0,0,0.1); text-align: center; }
-        .summary-card h2 { margin: 0; font-size: 2.5rem; }
-        .summary-card p { margin-top: 0.5rem; font-size: 1.2rem; opacity: 0.9; }
-        
-        .dashboard-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 2rem; margin-bottom: 2rem; }
-        
-        .chart-container { background: white; padding: 1.5rem; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); display: flex; flex-direction: column;}
-        .chart-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
-        
-        .timeframe-btns button { padding: 0.25rem 0.75rem; margin-left: 0.25rem; border: 1px solid #d1d5db; background: white; border-radius: 4px; cursor: pointer; font-size: 0.8rem; }
-        .timeframe-btns button.active { background: #2563eb; color: white; border-color: #2563eb; }
-        
-        .card { background: white; padding: 1.5rem; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 2rem; display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
-        input { padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 4px; flex: 1; min-width: 150px; }
-        button.primary { padding: 0.5rem 1rem; background-color: #2563eb; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; white-space: nowrap; }
-        button.primary:hover { background-color: #1d4ed8; }
-        button:disabled { background-color: #9ca3af; cursor: not-allowed; }
-        
-        table { width: 100%; border-collapse: collapse; background: white; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border-radius: 8px; overflow: hidden; font-size: 0.9rem; }
-        th, td { text-align: left; padding: 1rem; border-bottom: 1px solid #e5e7eb; }
-        th { background-color: #f3f4f6; }
-        .profit { color: #16a34a; font-weight: bold; }
-        .loss { color: #dc2626; font-weight: bold; }
-        .subtext { font-size: 0.8rem; color: #6b7280; display: block; margin-top: 2px; }
-        .delete-btn { color: #dc2626; cursor: pointer; border: none; background: none; font-weight: bold; font-size: 1.1rem; }
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ledger — portfolio tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0b1417;
+  --ink-2:#101c20;
+  --panel:#132126;
+  --line:#1e333a;
+  --line-2:#2a464f;
+  --bone:#e8e4d9;
+  --bone-dim:#9aa8a6;
+  --bone-faint:#657573;
+  --up:#3fb984;
+  --down:#e06a5c;
+  --gold:#d9a441;
+  --bench:#7f9bd1;
+  --r:4px;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--ink);
+  color:var(--bone);
+  font-family:"IBM Plex Sans",system-ui,sans-serif;
+  font-size:14px;
+  -webkit-font-smoothing:antialiased;
+}
+h1,h2,h3,.cond{font-family:"IBM Plex Sans Condensed","IBM Plex Sans",sans-serif}
+.mono,td.num,th.num,.kpi-v,input,select{font-family:"IBM Plex Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums}
+button,input,select{font-size:13px;color:var(--bone)}
+button{cursor:pointer}
+a{color:var(--gold)}
 
-        @media (max-width: 768px) {
-            .dashboard-grid { grid-template-columns: 1fr; }
-        }
-    </style>
+/* ---------- chrome ---------- */
+header{
+  border-bottom:1px solid var(--line);
+  background:linear-gradient(180deg,#0e1b1f,#0b1417);
+  position:sticky;top:0;z-index:40;
+}
+.bar{display:flex;align-items:center;gap:18px;padding:10px 18px;flex-wrap:wrap}
+.brand{display:flex;align-items:baseline;gap:9px}
+.brand b{font-family:"IBM Plex Sans Condensed";font-weight:700;letter-spacing:.14em;text-transform:uppercase;font-size:15px}
+.brand span{font-size:10px;letter-spacing:.22em;text-transform:uppercase;color:var(--bone-faint)}
+nav{display:flex;gap:2px;margin-left:auto;flex-wrap:wrap}
+nav button{
+  background:none;border:1px solid transparent;padding:6px 12px;border-radius:var(--r);
+  font-family:"IBM Plex Sans Condensed";font-weight:600;letter-spacing:.08em;text-transform:uppercase;
+  font-size:12px;color:var(--bone-dim);
+}
+nav button:hover{color:var(--bone);background:#16262b}
+nav button.on{color:var(--ink);background:var(--bone);border-color:var(--bone)}
+.btn{
+  background:#16262b;border:1px solid var(--line-2);border-radius:var(--r);padding:6px 12px;
+  font-family:"IBM Plex Sans Condensed";font-weight:600;letter-spacing:.06em;text-transform:uppercase;font-size:12px;
+}
+.btn:hover{background:#1d333a}
+.btn.primary{background:var(--gold);border-color:var(--gold);color:#1a1206}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.ghost{background:none}
+.btn.sm{padding:3px 8px;font-size:11px}
+.btn.danger:hover{border-color:var(--down);color:var(--down)}
+
+.subbar{display:flex;gap:14px;align-items:center;padding:0 18px 10px;flex-wrap:wrap}
+.rangeset{display:flex;border:1px solid var(--line-2);border-radius:var(--r);overflow:hidden}
+.rangeset button{
+  background:none;border:none;border-right:1px solid var(--line);padding:5px 10px;
+  font-family:"IBM Plex Mono";font-size:11px;color:var(--bone-dim);letter-spacing:.04em;
+}
+.rangeset button:last-child{border-right:none}
+.rangeset button:hover{background:#16262b;color:var(--bone)}
+.rangeset button.on{background:var(--line-2);color:var(--bone)}
+.tag{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--bone-faint);font-family:"IBM Plex Sans Condensed";font-weight:600}
+.dot{width:6px;height:6px;border-radius:50%;display:inline-block;background:var(--up);margin-right:6px}
+.dot.warn{background:var(--gold)}
+
+main{padding:18px;max-width:1560px;margin:0 auto}
+.view{display:none}
+.view.on{display:block}
+
+/* ---------- panels ---------- */
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--r)}
+.panel-h{
+  display:flex;align-items:center;gap:12px;padding:10px 14px;border-bottom:1px solid var(--line);flex-wrap:wrap;
+}
+.panel-h h2{margin:0;font-size:12px;letter-spacing:.16em;text-transform:uppercase;font-weight:600;color:var(--bone-dim)}
+.panel-b{padding:14px}
+
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:14px}
+.kpi{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:11px 13px}
+.kpi-k{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--bone-faint);font-family:"IBM Plex Sans Condensed";font-weight:600}
+.kpi-v{font-size:21px;margin-top:5px;letter-spacing:-.01em}
+.kpi-s{font-size:11px;color:var(--bone-dim);margin-top:2px;font-family:"IBM Plex Mono"}
+.up{color:var(--up)} .down{color:var(--down)} .flat{color:var(--bone-dim)}
+
+/* ---------- chart ---------- */
+.chartwrap{position:relative;width:100%}
+.chartwrap svg{display:block;width:100%;height:auto;touch-action:pan-y}
+.tip{
+  position:absolute;pointer-events:none;background:#08110f;border:1px solid var(--line-2);
+  border-radius:var(--r);padding:7px 9px;font-family:"IBM Plex Mono";font-size:11px;
+  white-space:nowrap;opacity:0;transition:opacity .1s;z-index:5;box-shadow:0 6px 22px #0009;
+}
+.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:11px;font-family:"IBM Plex Mono";color:var(--bone-dim)}
+.legend i{display:inline-block;width:14px;height:2px;vertical-align:middle;margin-right:6px}
+.seg{display:flex;border:1px solid var(--line-2);border-radius:var(--r);overflow:hidden}
+.seg button{background:none;border:none;border-right:1px solid var(--line);padding:5px 11px;font-family:"IBM Plex Sans Condensed";font-weight:600;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--bone-dim)}
+.seg button:last-child{border-right:none}
+.seg button.on{background:var(--line-2);color:var(--bone)}
+label.chk{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--bone-dim);cursor:pointer;font-family:"IBM Plex Sans Condensed";font-weight:600;letter-spacing:.06em;text-transform:uppercase}
+input[type=checkbox]{accent-color:var(--gold)}
+
+/* ---------- tables ---------- */
+table{width:100%;border-collapse:collapse}
+th{
+  text-align:left;font-family:"IBM Plex Sans Condensed";font-weight:600;font-size:10px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--bone-faint);padding:8px 10px;border-bottom:1px solid var(--line-2);white-space:nowrap;
+}
+th.num,td.num{text-align:right}
+td{padding:8px 10px;border-bottom:1px solid var(--line);font-size:13px;white-space:nowrap}
+tr.grp td{background:#16272c;font-weight:600}
+tr.lot td{color:var(--bone-dim);font-size:12px}
+tr.lot td:first-child{padding-left:24px}
+tr.closed td:first-child::after{content:" closed";font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--bone-faint)}
+tbody tr:hover td{background:#17282d}
+.sym{font-family:"IBM Plex Mono";font-weight:500}
+.nm{color:var(--bone-faint);font-size:11px;margin-left:7px;font-family:"IBM Plex Sans"}
+.scroll{overflow-x:auto}
+
+/* ---------- heatmap ---------- */
+#heat{width:100%;height:auto;display:block}
+.heat-cell rect{stroke:var(--ink);stroke-width:1.5}
+.heat-cell:hover rect{stroke:var(--bone);stroke-width:1.5}
+.heat-cell text{font-family:"IBM Plex Mono";fill:#fff;pointer-events:none}
+.scale{display:flex;align-items:center;gap:8px;font-family:"IBM Plex Mono";font-size:10px;color:var(--bone-faint)}
+.scale .grad{width:150px;height:9px;border-radius:2px;background:linear-gradient(90deg,#c0392f,#5a3a38,#2c3b3e,#2f6a52,#2aa06d)}
+
+/* ---------- forms / modal ---------- */
+.modal{position:fixed;inset:0;background:#04090a;background:rgba(4,9,10,.72);display:none;align-items:flex-start;justify-content:center;padding:40px 16px;z-index:80;overflow:auto}
+.modal.on{display:flex}
+.sheet{background:var(--ink-2);border:1px solid var(--line-2);border-radius:6px;width:100%;max-width:520px;box-shadow:0 20px 60px #000a}
+.sheet-h{display:flex;align-items:center;padding:13px 16px;border-bottom:1px solid var(--line)}
+.sheet-h h3{margin:0;font-size:13px;letter-spacing:.14em;text-transform:uppercase;font-weight:600}
+.sheet-h .btn{margin-left:auto}
+.sheet-b{padding:16px}
+.field{margin-bottom:12px}
+.field label{display:block;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--bone-faint);margin-bottom:5px;font-family:"IBM Plex Sans Condensed";font-weight:600}
+input[type=text],input[type=number],input[type=date],select,textarea{
+  width:100%;background:#0a1417;border:1px solid var(--line-2);border-radius:var(--r);padding:8px 10px;outline:none;
+}
+input:focus,select:focus,textarea:focus{border-color:var(--gold);box-shadow:0 0 0 2px #d9a44122}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+.hint{font-size:11px;color:var(--bone-faint);margin-top:5px;line-height:1.5}
+.results{border:1px solid var(--line);border-radius:var(--r);max-height:230px;overflow:auto;margin-top:8px}
+.results div{padding:8px 10px;border-bottom:1px solid var(--line);cursor:pointer;display:flex;gap:10px;align-items:baseline}
+.results div:hover{background:#16262b}
+.results b{font-family:"IBM Plex Mono";font-weight:500;font-size:13px}
+.results small{color:var(--bone-faint);font-size:11px;overflow:hidden;text-overflow:ellipsis}
+.results em{margin-left:auto;font-style:normal;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--bone-faint)}
+.empty{padding:34px 18px;text-align:center;color:var(--bone-faint);font-size:13px;line-height:1.7}
+.empty b{display:block;color:var(--bone-dim);font-family:"IBM Plex Sans Condensed";letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(12px);background:#08110f;border:1px solid var(--line-2);border-radius:var(--r);padding:9px 14px;font-size:12px;opacity:0;transition:.18s;z-index:99;pointer-events:none}
+.toast.on{opacity:1;transform:translateX(-50%)}
+.grid2{display:grid;grid-template-columns:1.4fr 1fr;gap:14px;align-items:start}
+@media(max-width:900px){.grid2{grid-template-columns:1fr}}
+.err{color:var(--down);font-size:12px;font-family:"IBM Plex Mono"}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
 </head>
 <body>
 
-    <div class="summary-card">
-        <div>Total Portfolio Value</div>
-        <h2 id="totalPortfolioValue">€0.00</h2>
-        <p>Total P/L: <span id="totalPortfolioPL">€0.00</span></p>
-    </div>
+<header>
+  <div class="bar">
+    <div class="brand"><b>Ledger</b><span>portfolio tracker</span></div>
+    <nav>
+      <button data-view="dash" class="on">Dashboard</button>
+      <button data-view="holdings">Holdings</button>
+      <button data-view="heat">Heatmap</button>
+      <button data-view="settings">Settings</button>
+    </nav>
+    <button class="btn primary" id="addBtn">+ Add position</button>
+  </div>
+  <div class="subbar">
+    <span class="tag">Window</span>
+    <div class="rangeset" id="ranges"></div>
+    <span class="tag" style="margin-left:auto"><span class="dot" id="srcDot"></span><span id="srcLabel">demo data</span></span>
+    <button class="btn ghost sm" id="refreshBtn">Refresh prices</button>
+  </div>
+</header>
 
-    <div class="dashboard-grid">
-        <div class="chart-container">
-            <div class="chart-header">
-                <div>
-                    <h3 style="margin: 0;">Performance vs S&P 500</h3>
-                    <span class="subtext" id="chartStatus">Loading...</span>
-                </div>
-                <div class="timeframe-btns" id="timeframeContainer">
-                    <button onclick="changeTimeframe('1M', this)">1M</button>
-                    <button onclick="changeTimeframe('6M', this)">6M</button>
-                    <button onclick="changeTimeframe('1Y', this)">1Y</button>
-                    <button class="active" onclick="changeTimeframe('ALL', this)">ALL</button>
-                </div>
-            </div>
-            <div style="flex-grow: 1; position: relative; min-height: 250px;">
-                <canvas id="portfolioChart"></canvas>
-            </div>
+<main>
+  <!-- ============ DASHBOARD ============ -->
+  <section class="view on" id="view-dash">
+    <div class="kpis" id="kpis"></div>
+    <div class="panel">
+      <div class="panel-h">
+        <h2 id="chartTitle">Portfolio value</h2>
+        <div class="seg" id="chartMode" style="margin-left:auto">
+          <button data-mode="money" class="on">Value</button>
+          <button data-mode="pct">Return %</button>
         </div>
+        <label class="chk"><input type="checkbox" id="showBench" checked> Benchmark</label>
+        <label class="chk"><input type="checkbox" id="showCost" checked> Invested</label>
+      </div>
+      <div class="panel-b">
+        <div class="chartwrap" id="mainChart"></div>
+        <div class="legend" id="mainLegend" style="margin-top:10px"></div>
+      </div>
+    </div>
+    <div class="grid2" style="margin-top:14px">
+      <div class="panel">
+        <div class="panel-h"><h2>Today's movers</h2></div>
+        <div class="scroll"><table id="moversTable"></table></div>
+      </div>
+      <div class="panel">
+        <div class="panel-h"><h2>Allocation</h2></div>
+        <div class="panel-b"><div id="alloc"></div></div>
+      </div>
+    </div>
+  </section>
 
-        <div class="chart-container">
-            <div class="chart-header">
-                <h3 style="margin: 0;">Asset Allocation</h3>
-            </div>
-            <div style="flex-grow: 1; position: relative; min-height: 250px; display: flex; justify-content: center; align-items: center;">
-                <canvas id="allocationChart"></canvas>
-            </div>
+  <!-- ============ HOLDINGS ============ -->
+  <section class="view" id="view-holdings">
+    <div class="panel">
+      <div class="panel-h">
+        <h2>Positions</h2>
+        <label class="chk" style="margin-left:auto"><input type="checkbox" id="showClosed"> Show closed lots</label>
+      </div>
+      <div class="scroll"><table id="holdTable"></table></div>
+    </div>
+  </section>
+
+  <!-- ============ HEATMAP ============ -->
+  <section class="view" id="view-heat">
+    <div class="panel">
+      <div class="panel-h">
+        <h2>Position map</h2>
+        <div class="seg" id="heatMode" style="margin-left:auto">
+          <button data-hm="day" class="on">Day %</button>
+          <button data-hm="total">Total %</button>
         </div>
+        <div class="scale">
+          <span id="scaleMin">−3%</span><span class="grad"></span><span id="scaleMax">+3%</span>
+          <input type="number" id="heatScale" step="0.5" min="0.5" style="width:64px;padding:3px 6px">
+        </div>
+      </div>
+      <div class="panel-b">
+        <div class="chartwrap" id="heatWrap"></div>
+        <div class="hint" style="margin-top:10px">Rectangle area is the share of portfolio value. Colour is the price move over the selected metric.</div>
+      </div>
     </div>
-    
-    <div class="card">
-        <input type="text" id="isinInput" placeholder="ISIN (e.g. US0378331005)" required>
-        <input type="date" id="dateInput" required>
-        <input type="number" id="qtyInput" placeholder="Quantity" step="any" required>
-        <input type="number" id="priceInput" placeholder="Buy Price (€)" step="any" required>
-        <button class="primary" id="addBtn" onclick="addStock()">Add to Portfolio</button>
+  </section>
+
+  <!-- ============ SETTINGS ============ -->
+  <section class="view" id="view-settings">
+    <div class="grid2">
+      <div class="panel">
+        <div class="panel-h"><h2>Price source</h2></div>
+        <div class="panel-b">
+          <div class="field">
+            <label>Provider</label>
+            <select id="setProvider">
+              <option value="demo">Demo — offline simulated prices</option>
+              <option value="yahoo">Yahoo Finance — needs a CORS proxy</option>
+              <option value="stooq">Stooq CSV — needs a CORS proxy</option>
+              <option value="alphavantage">Alpha Vantage — needs a free key</option>
+            </select>
+            <div class="hint" id="provHint"></div>
+          </div>
+          <div class="field" id="proxyField">
+            <label>CORS proxy</label>
+            <input type="text" id="setProxy" placeholder="https://corsproxy.io/?url={url}">
+            <div class="hint">The browser blocks direct calls to these APIs. Put <b>{url}</b> where the encoded target URL goes; without a placeholder the proxy is used as a prefix. Self-hosting a small proxy is the reliable option — a public one can disappear at any time.</div>
+          </div>
+          <div class="field" id="keyField">
+            <label>Alpha Vantage key</label>
+            <input type="text" id="setKey" placeholder="ABC123...">
+            <div class="hint">Free keys allow roughly 25 requests a day, so prices are cached.</div>
+          </div>
+          <div class="row2">
+            <div class="field"><label>Benchmark symbol</label><input type="text" id="setBench"></div>
+            <div class="field"><label>Cache prices for (hours)</label><input type="number" id="setCache" min="0" step="1"></div>
+          </div>
+          <div class="row2">
+            <div class="field"><label>Currency</label><input type="text" id="setCurrency" placeholder="USD"></div>
+            <div class="field"><label>Sale proceeds</label>
+              <select id="setCash">
+                <option value="1">Stay in the portfolio as cash</option>
+                <option value="0">Leave the portfolio (withdrawn)</option>
+              </select>
+            </div>
+          </div>
+          <div class="hint">Everything is one currency — no FX conversion is applied.</div>
+          <button class="btn primary" id="saveSettings" style="margin-top:12px">Save settings</button>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-h"><h2>Your data</h2></div>
+        <div class="panel-b">
+          <div class="hint" id="storeNote" style="margin-bottom:12px"></div>
+          <button class="btn" id="exportBtn">Export portfolio</button>
+          <button class="btn" id="importBtn">Import portfolio</button>
+          <button class="btn" id="demoBtn">Load sample portfolio</button>
+          <button class="btn danger" id="wipeBtn">Delete everything</button>
+          <div class="field" style="margin-top:14px">
+            <label>Portfolio JSON</label>
+            <textarea id="jsonBox" rows="9" spellcheck="false" style="font-family:'IBM Plex Mono';font-size:11px"></textarea>
+          </div>
+          <button class="btn primary" id="applyJson">Apply JSON</button>
+          <div class="hint" style="margin-top:14px">Prices come from public endpoints and can be delayed, adjusted differently, or plain wrong. Check anything before you act on it.</div>
+        </div>
+      </div>
     </div>
+  </section>
+</main>
 
-    <table>
-        <thead>
-            <tr>
-                <th>Asset</th>
-                <th>Purchase Info</th>
-                <th>Invested (€)</th>
-                <th>Current Value (€)</th>
-                <th>Total P/L</th>
-                <th></th>
-            </tr>
-        </thead>
-        <tbody id="portfolioTable"></tbody>
-    </table>
+<!-- ============ ADD MODAL ============ -->
+<div class="modal" id="addModal">
+  <div class="sheet">
+    <div class="sheet-h"><h3>Add position</h3><button class="btn ghost sm" data-close>Close</button></div>
+    <div class="sheet-b">
+      <div class="field">
+        <label>Find an instrument</label>
+        <input type="text" id="searchInput" placeholder="Ticker, ISIN or company name" autocomplete="off">
+        <div class="hint" id="searchHint">Type at least two characters. ISIN lookup works on the Yahoo source.</div>
+        <div class="results" id="searchResults" style="display:none"></div>
+      </div>
+      <div id="pickedBox" style="display:none">
+        <div class="field">
+          <label>Selected</label>
+          <div style="display:flex;align-items:baseline;gap:8px;padding:8px 10px;border:1px solid var(--line-2);border-radius:var(--r)">
+            <b class="sym" id="pickedSym"></b><small style="color:var(--bone-faint)" id="pickedName"></small>
+            <button class="btn ghost sm" id="clearPick" style="margin-left:auto">Change</button>
+          </div>
+        </div>
+        <div class="row3">
+          <div class="field"><label>Buy date</label><input type="date" id="inDate"></div>
+          <div class="field"><label>Quantity</label><input type="number" id="inQty" step="any" min="0"></div>
+          <div class="field"><label>Price per share</label><input type="number" id="inPrice" step="any" min="0"></div>
+        </div>
+        <div class="row2">
+          <div class="field"><label>Fees (optional)</label><input type="number" id="inFee" step="any" min="0" value="0"></div>
+          <div class="field"><label>&nbsp;</label><button class="btn" id="fillPrice" style="width:100%">Use close on that date</button></div>
+        </div>
+        <div class="err" id="addErr"></div>
+        <button class="btn primary" id="saveAdd" style="width:100%;margin-top:6px">Add to portfolio</button>
+      </div>
+    </div>
+  </div>
+</div>
 
-    <script>
-        const API_KEY = "d9h6bp1r01qhv00kvmrgd9h6bp1r01qhv00kvms0"; 
-        let portfolio = JSON.parse(localStorage.getItem('myPortfolio')) || [];
-        let lineChart = null; 
-        let doughnutChart = null;
-        let currentTimeframe = 'ALL';
+<!-- ============ SELL MODAL ============ -->
+<div class="modal" id="sellModal">
+  <div class="sheet" style="max-width:440px">
+    <div class="sheet-h"><h3>Record a sale</h3><button class="btn ghost sm" data-close>Close</button></div>
+    <div class="sheet-b">
+      <div class="hint" id="sellCtx" style="margin-bottom:12px"></div>
+      <div class="row3">
+        <div class="field"><label>Sell date</label><input type="date" id="sellDate"></div>
+        <div class="field"><label>Quantity</label><input type="number" id="sellQty" step="any" min="0"></div>
+        <div class="field"><label>Price</label><input type="number" id="sellPrice" step="any" min="0"></div>
+      </div>
+      <div class="err" id="sellErr"></div>
+      <button class="btn primary" id="saveSell" style="width:100%">Record sale</button>
+      <div id="sellList" style="margin-top:14px"></div>
+    </div>
+  </div>
+</div>
 
-        window.onload = async function() {
-            portfolio = portfolio.filter(s => s && typeof s === 'object' && s.ticker && !isNaN(s.currentValue));
-            localStorage.setItem('myPortfolio', JSON.stringify(portfolio));
-            
-            renderTable(); 
-            updateDashboard();
-            drawAllocationChart();
-            await refreshLivePrices(); 
-            await buildHistoricalChart(currentTimeframe);
-        }
+<div class="toast" id="toast"></div>
+<script>
+/* ============================================================
+   Ledger — single file portfolio tracker
+   ============================================================ */
+const $=s=>document.querySelector(s), $$=s=>Array.from(document.querySelectorAll(s));
 
-        async function refreshLivePrices() {
-            if (portfolio.length === 0) return;
-            
-            try {
-                const fxRes = await fetch('https://open.er-api.com/v6/latest/USD');
-                const fxData = await fxRes.json();
-                const usdToEurRate = fxData.rates.EUR || 1;
+/* ---------- storage (falls back to memory if blocked) ---------- */
+const store=(()=>{
+  let ok=true, mem={};
+  try{localStorage.setItem('__t','1');localStorage.removeItem('__t');}catch(e){ok=false;}
+  return{
+    persistent:ok,
+    get(k,d){try{const v=ok?localStorage.getItem(k):mem[k];return v==null?d:JSON.parse(v);}catch(e){return d;}},
+    set(k,v){try{const s=JSON.stringify(v);if(ok)localStorage.setItem(k,s);else mem[k]=s;}catch(e){}},
+    del(k){try{if(ok)localStorage.removeItem(k);else delete mem[k];}catch(e){}},
+    keys(){try{return ok?Object.keys(localStorage):Object.keys(mem);}catch(e){return[];}}
+  };
+})();
 
-                for (let i = 0; i < portfolio.length; i++) {
-                    try {
-                        const quoteRes = await fetch(`https://finnhub.io/api/v1/quote?symbol=${portfolio[i].ticker}&token=${API_KEY}`);
-                        const quoteData = await quoteRes.json();
-                        
-                        if (quoteData && typeof quoteData.c === 'number' && quoteData.c > 0) {
-                            let livePrice = quoteData.c;
-                            let livePriceEur = portfolio[i].ticker.includes('.') ? livePrice : livePrice * usdToEurRate;
-                            portfolio[i].currentValue = portfolio[i].quantity * livePriceEur;
-                            portfolio[i].livePriceEur = livePriceEur; 
-                        }
-                    } catch (error) { 
-                        console.error("Failed to update " + portfolio[i].ticker); 
-                    }
-                }
-                saveAndRender();
-            } catch (err) {
-                console.error("Currency API failed");
-            }
-        }
+/* ---------- state ---------- */
+const DEFAULTS={provider:'demo',proxy:'',avKey:'',benchmark:'',currency:'USD',cashMode:1,cacheHours:12,heatScale:3};
+let S=Object.assign({},DEFAULTS,store.get('lg_settings',{}));
+let POS=store.get('lg_positions',[]);
+let RANGE=store.get('lg_range','1Y');
+let CHART_MODE='money', HEAT_MODE='day';
+const PX={};          // symbol -> {dates:[], closes:[]}
+const FAILED={};      // symbol -> error text
 
-        function changeTimeframe(tf, btnElement) {
-            const btns = document.getElementById('timeframeContainer').getElementsByTagName('button');
-            for(let b of btns) b.classList.remove('active');
-            btnElement.classList.add('active');
-            
-            currentTimeframe = tf;
-            buildHistoricalChart(tf);
-        }
+const savePositions=()=>store.set('lg_positions',POS);
+const saveSettings=()=>store.set('lg_settings',S);
 
-        async function buildHistoricalChart(timeframe) {
-            const statusEl = document.getElementById('chartStatus');
-            if (portfolio.length === 0) {
-                statusEl.innerText = "Add stocks to see data.";
-                if (lineChart) lineChart.destroy();
-                return;
-            }
-            statusEl.innerText = "Syncing...";
+/* ---------- small utils ---------- */
+const uid=()=>Math.random().toString(36).slice(2,10);
+const iso=d=>d.toISOString().slice(0,10);
+const today=()=>iso(new Date());
+function addMonths(ds,n){const a=ds.split('-').map(Number);const d=new Date(Date.UTC(a[0],a[1]-1+n,a[2]));return iso(d);}
+function fmtMoney(v,dp){
+  if(v==null||!isFinite(v))return'—';
+  try{return new Intl.NumberFormat(undefined,{style:'currency',currency:(S.currency||'USD').toUpperCase(),maximumFractionDigits:dp==null?2:dp}).format(v);}
+  catch(e){return (S.currency||'')+' '+v.toFixed(dp==null?2:dp);}
+}
+const fmtNum=(v,dp)=>v==null||!isFinite(v)?'—':v.toLocaleString(undefined,{minimumFractionDigits:dp==null?2:dp,maximumFractionDigits:dp==null?2:dp});
+const fmtPct=(v,dp)=>v==null||!isFinite(v)?'—':(v>=0?'+':'')+v.toFixed(dp==null?2:dp)+'%';
+const cls=v=>v==null||!isFinite(v)||Math.abs(v)<1e-9?'flat':(v>0?'up':'down');
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('on');clearTimeout(t._h);t._h=setTimeout(function(){t.classList.remove('on');},2600);}
 
-            let fromDate = new Date();
-            if (timeframe === '1M') {
-                fromDate.setMonth(fromDate.getMonth() - 1);
-            } else if (timeframe === '6M') {
-                fromDate.setMonth(fromDate.getMonth() - 6);
-            } else if (timeframe === '1Y') {
-                fromDate.setFullYear(fromDate.getFullYear() - 1);
-            } else {
-                let earliest = new Date();
-                portfolio.forEach(s => {
-                    const bDate = new Date(s.date);
-                    if (bDate < earliest) earliest = bDate;
-                });
-                const thirtyDaysAgo = new Date();
-                thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-                fromDate = earliest > thirtyDaysAgo ? thirtyDaysAgo : earliest;
-            }
+/* forward-filled close: last close on or before `date` */
+function closeAt(sym,date){
+  const s=PX[sym]; if(!s||!s.dates.length)return null;
+  const D=s.dates; if(date<D[0])return null;
+  let lo=0,hi=D.length-1,r=-1;
+  while(lo<=hi){const m=(lo+hi)>>1; if(D[m]<=date){r=m;lo=m+1;}else hi=m-1;}
+  return r<0?null:s.closes[r];
+}
+const lastClose=sym=>{const s=PX[sym];return s&&s.closes.length?s.closes[s.closes.length-1]:null;};
+const prevClose=sym=>{const s=PX[sym];return s&&s.closes.length>1?s.closes[s.closes.length-2]:null;};
+const lastDate=sym=>{const s=PX[sym];return s&&s.dates.length?s.dates[s.dates.length-1]:null;};
 
-            const fromUnix = Math.floor(fromDate.getTime() / 1000);
-            const toUnix = Math.floor(Date.now() / 1000);
+/* ============================================================
+   PRICE PROVIDERS
+   search(query) -> [{symbol,name,type}] ; series(symbol) -> {dates,closes}
+   ============================================================ */
+function withProxy(url){
+  const p=(S.proxy||'').trim();
+  if(!p)return url;
+  return p.indexOf('{url}')>=0 ? p.replace('{url}',encodeURIComponent(url)) : p+url;
+}
+async function getJSON(url){
+  const r=await fetch(withProxy(url),{headers:{'Accept':'application/json'}});
+  if(!r.ok)throw new Error('HTTP '+r.status);
+  return r.json();
+}
 
-            try {
-                // 1. Get Benchmark Data
-                const spRes = await fetch(`https://finnhub.io/api/v1/stock/candle?symbol=SPY&resolution=D&from=${fromUnix}&to=${toUnix}&token=${API_KEY}`);
-                const spData = await spRes.json();
-                
-                let masterTimestamps = [];
-                let spChartData = [];
+/* deterministic pseudo random walk so the demo is stable across reloads */
+function seedOf(s){let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619);}return h>>>0;}
+function rng(seed){let x=seed||1;return function(){x^=x<<13;x^=x>>>17;x^=x<<5;x>>>=0;return x/4294967296;};}
+function demoSeries(sym){
+  const r=rng(seedOf(sym.toUpperCase()));
+  const bench=/SPX|GSPC|SPY/i.test(sym);
+  let price=bench?3200:(8+r()*380);
+  const drift=bench?0.00030:(0.00012+r()*0.00055);
+  const vol=bench?0.0088:(0.011+r()*0.021);
+  const dates=[],closes=[];
+  const start=new Date(); start.setUTCFullYear(start.getUTCFullYear()-6);
+  const end=new Date();
+  for(const d=new Date(start); d<=end; d.setUTCDate(d.getUTCDate()+1)){
+    const wd=d.getUTCDay(); if(wd===0||wd===6)continue;
+    const u=Math.max(1e-9,r()), v=r();
+    const g=Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);
+    price*=Math.exp(drift-0.5*vol*vol+vol*g);
+    dates.push(iso(d)); closes.push(+price.toFixed(2));
+  }
+  return{dates:dates,closes:closes};
+}
+const DEMO_UNIVERSE=[
+ ['AAPL','Apple Inc.','US0378331005'],['MSFT','Microsoft Corporation','US5949181045'],
+ ['NVDA','NVIDIA Corporation','US67066G1040'],['AMZN','Amazon.com, Inc.','US0231351067'],
+ ['GOOGL','Alphabet Inc. Class A','US02079K3059'],['META','Meta Platforms, Inc.','US30303M1027'],
+ ['TSLA','Tesla, Inc.','US88160R1014'],['BRK-B','Berkshire Hathaway Inc. Class B','US0846707026'],
+ ['JPM','JPMorgan Chase & Co.','US46625H1005'],['V','Visa Inc.','US92826C8394'],
+ ['UNH','UnitedHealth Group Inc.','US91324P1021'],['JNJ','Johnson & Johnson','US4781601046'],
+ ['XOM','Exxon Mobil Corporation','US30231G1022'],['PG','Procter & Gamble Co.','US7427181091'],
+ ['KO','The Coca-Cola Company','US1912161007'],['DIS','The Walt Disney Company','US2546871060'],
+ ['NFLX','Netflix, Inc.','US64110L1061'],['AMD','Advanced Micro Devices, Inc.','US0079031078'],
+ ['INTC','Intel Corporation','US4581401001'],['CRM','Salesforce, Inc.','US79466L3024'],
+ ['SAP','SAP SE','DE0007164600'],['SIE.DE','Siemens AG','DE0007236101'],
+ ['ALV.DE','Allianz SE','DE0008404005'],['BMW.DE','Bayerische Motoren Werke AG','DE0005190003'],
+ ['MBG.DE','Mercedes-Benz Group AG','DE0007100000'],['VOW3.DE','Volkswagen AG pref.','DE0007664039'],
+ ['BAS.DE','BASF SE','DE000BASF111'],['DTE.DE','Deutsche Telekom AG','DE0005557508'],
+ ['ASML','ASML Holding N.V.','NL0010273215'],['MC.PA','LVMH','FR0000121014'],
+ ['NESN.SW','Nestle S.A.','CH0038863350'],['NOVN.SW','Novartis AG','CH0012005267'],
+ ['SHEL.L','Shell plc','GB00BP6MXD84'],['AZN.L','AstraZeneca PLC','GB0009895292'],
+ ['VOO','Vanguard S&P 500 ETF','US9229083632'],['SPY','SPDR S&P 500 ETF Trust','US78462F1030'],
+ ['QQQ','Invesco QQQ Trust','US46090E1038'],['IWDA.AS','iShares Core MSCI World UCITS ETF','IE00B4L5Y983'],
+ ['EUNL.DE','iShares Core MSCI World UCITS ETF','IE00B4L5Y983'],['VWCE.DE','Vanguard FTSE All-World UCITS ETF','IE00BK5BQT80'],
+ ['SPX','S&P 500 Index','-']
+];
 
-                if (spData && spData.s === "ok") {
-                    masterTimestamps = spData.t; 
-                    const spBaseline = spData.c[0];
-                    spChartData = spData.c.map(price => ((price - spBaseline) / spBaseline) * 100);
-                } else {
-                    let d = new Date(fromDate);
-                    while (d <= new Date()) {
-                        masterTimestamps.push(Math.floor(d.getTime() / 1000));
-                        d.setDate(d.getDate() + 1);
-                    }
-                    spChartData = new Array(masterTimestamps.length).fill(0);
-                }
+const Providers={
+  demo:{
+    label:'Demo data', bench:'SPX', needs:'',
+    hint:'Simulated prices generated in your browser. Nothing is fetched, so the whole app works offline. Good for checking the layout before you wire up a real source.',
+    async search(q){
+      const s=q.trim().toLowerCase();
+      return DEMO_UNIVERSE.filter(function(x){return x[0].toLowerCase().indexOf(s)>=0||x[1].toLowerCase().indexOf(s)>=0||x[2].toLowerCase().indexOf(s)>=0;})
+        .slice(0,20).map(function(x){return{symbol:x[0],name:x[1],type:x[2]==='-'?'index':x[2]};});
+    },
+    async series(sym){return demoSeries(sym);}
+  },
 
-                // 2. Get Portfolio Historical Data
-                const stockHistories = {};
-                const fxRes = await fetch('https://open.er-api.com/v6/latest/USD');
-                const fxData = await fxRes.json();
-                const usdToEurRate = fxData.rates.EUR || 1;
+  yahoo:{
+    label:'Yahoo Finance', bench:'^GSPC', needs:'proxy',
+    hint:'Widest coverage and the only source here that resolves ISINs. Yahoo sends no CORS header, so a proxy is required.',
+    async search(q){
+      const d=await getJSON('https://query1.finance.yahoo.com/v1/finance/search?q='+encodeURIComponent(q)+'&quotesCount=20&newsCount=0');
+      return(d.quotes||[]).filter(function(x){return x.symbol;}).map(function(x){
+        return{symbol:x.symbol,name:x.shortname||x.longname||x.symbol,
+        type:[x.quoteType,x.exchange].filter(Boolean).join(' / ').toLowerCase()};});
+    },
+    async series(sym){
+      const d=await getJSON('https://query1.finance.yahoo.com/v8/finance/chart/'+encodeURIComponent(sym)+'?range=10y&interval=1d');
+      const r=d.chart&&d.chart.result&&d.chart.result[0];
+      if(!r)throw new Error((d.chart&&d.chart.error&&d.chart.error.description)||'no data');
+      const ts=r.timestamp||[];
+      const adj=r.indicators.adjclose&&r.indicators.adjclose[0]?r.indicators.adjclose[0].adjclose:null;
+      const raw=r.indicators.quote[0].close;
+      const dates=[],closes=[];
+      for(let i=0;i<ts.length;i++){
+        let c=adj&&adj[i]!=null?adj[i]:raw[i];
+        if(c==null)continue;
+        dates.push(new Date(ts[i]*1000).toISOString().slice(0,10)); closes.push(c);
+      }
+      return{dates:dates,closes:closes};
+    }
+  },
 
-                for (let stock of portfolio) {
-                    try {
-                        const res = await fetch(`https://finnhub.io/api/v1/stock/candle?symbol=${stock.ticker}&resolution=D&from=${fromUnix}&to=${toUnix}&token=${API_KEY}`);
-                        const data = await res.json();
-                        if (data && data.s === "ok") stockHistories[stock.ticker] = data;
-                    } catch (e) {}
-                }
+  stooq:{
+    label:'Stooq', bench:'^spx', needs:'proxy',
+    hint:'Free daily CSV, no key and no rate limit. US tickers need a .us suffix (aapl.us), German ones .de. There is no search endpoint, so type a symbol and choose "use as typed".',
+    async search(q){
+      const s=q.trim().toLowerCase();
+      return DEMO_UNIVERSE.filter(function(x){return x[0].toLowerCase().indexOf(s)>=0||x[1].toLowerCase().indexOf(s)>=0||x[2].toLowerCase().indexOf(s)>=0;})
+        .slice(0,12).map(function(x){return{symbol:/\./.test(x[0])?x[0].toLowerCase():x[0].toLowerCase()+'.us',name:x[1],type:'suggested'};});
+    },
+    async series(sym){
+      const r=await fetch(withProxy('https://stooq.com/q/d/l/?s='+encodeURIComponent(sym)+'&i=d'));
+      if(!r.ok)throw new Error('HTTP '+r.status);
+      const txt=await r.text();
+      const lines=txt.trim().split(/\r?\n/);
+      if(lines.length<2||!/Date/i.test(lines[0]))throw new Error('symbol not found');
+      const hdr=lines[0].split(','); let ci=-1;
+      for(let i=0;i<hdr.length;i++)if(/close/i.test(hdr[i]))ci=i;
+      const dates=[],closes=[];
+      for(let i=1;i<lines.length;i++){
+        const p=lines[i].split(','); const c=parseFloat(p[ci]);
+        if(!p[0]||!isFinite(c))continue;
+        dates.push(p[0]); closes.push(c);
+      }
+      return{dates:dates,closes:closes};
+    }
+  },
 
-                // 3. Process Data with Forward-Filling & Interpolation
-                const rawPortfolioPercentages = [];
-                const labels = [];
+  alphavantage:{
+    label:'Alpha Vantage', bench:'SPY', needs:'key',
+    hint:'Sends proper CORS headers, so no proxy is needed. The free tier is around 25 requests a day, so raise the cache window to stay under it.',
+    async search(q){
+      if(!S.avKey)throw new Error('add your API key in Settings');
+      const d=await getJSON('https://www.alphavantage.co/query?function=SYMBOL_SEARCH&keywords='+encodeURIComponent(q)+'&apikey='+S.avKey);
+      if(d.Note||d.Information)throw new Error(d.Note||d.Information);
+      return(d.bestMatches||[]).map(function(m){return{symbol:m['1. symbol'],name:m['2. name'],type:m['4. region']||''};});
+    },
+    async series(sym){
+      if(!S.avKey)throw new Error('add your API key in Settings');
+      const d=await getJSON('https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&outputsize=full&symbol='+encodeURIComponent(sym)+'&apikey='+S.avKey);
+      const t=d['Time Series (Daily)'];
+      if(!t)throw new Error(d.Note||d.Information||d['Error Message']||'no data');
+      const dates=Object.keys(t).sort(), closes=dates.map(function(k){return parseFloat(t[k]['4. close']);});
+      return{dates:dates,closes:closes};
+    }
+  }
+};
+const prov=()=>Providers[S.provider]||Providers.demo;
+const benchSym=()=>(S.benchmark&&S.benchmark.trim())||prov().bench;
 
-                for (let i = 0; i < masterTimestamps.length; i++) {
-                    const currentUnix = masterTimestamps[i];
-                    labels.push(new Date(currentUnix * 1000).toLocaleDateString(undefined, {month: 'short', day: 'numeric'}));
+/* ---------- cached fetch ---------- */
+const cacheKey=sym=>'lg_px_'+S.provider+'_'+sym;
+async function loadSeries(sym,force){
+  if(!sym)return null;
+  if(!force&&PX[sym])return PX[sym];
+  if(S.provider==='demo'){PX[sym]=demoSeries(sym);return PX[sym];}
+  if(!force){
+    const c=store.get(cacheKey(sym),null);
+    if(c&&c.t&&(Date.now()-c.t)<(S.cacheHours*3600*1000)&&c.d&&c.d.dates.length){PX[sym]=c.d;return PX[sym];}
+  }
+  try{
+    const d=await prov().series(sym);
+    if(!d.dates.length)throw new Error('empty series');
+    PX[sym]=d; delete FAILED[sym];
+    store.set(cacheKey(sym),{t:Date.now(),d:d});
+    return d;
+  }catch(e){
+    FAILED[sym]=e.message||String(e);
+    const c=store.get(cacheKey(sym),null);        // stale beats nothing
+    if(c&&c.d){PX[sym]=c.d;return c.d;}
+    return null;
+  }
+}
+async function loadAll(force){
+  const set={}; POS.forEach(function(p){set[p.symbol]=1;}); set[benchSym()]=1;
+  await Promise.all(Object.keys(set).map(function(s){return loadSeries(s,force);}));
+}
+function clearCache(){
+  store.keys().filter(function(k){return k.indexOf('lg_px_')===0;}).forEach(function(k){store.del(k);});
+  Object.keys(PX).forEach(function(k){delete PX[k];});
+}
 
-                    let dailyInvested = 0;
-                    let dailyValue = 0;
+/* ============================================================
+   POSITION MATHS
+   A position is one lot: {id,symbol,name,date,qty,price,fee,sells:[{date,qty,price}]}
+   ============================================================ */
+function soldQty(p,upto){
+  return (p.sells||[]).reduce(function(a,s){return a+((upto==null||s.date<=upto)?(+s.qty||0):0);},0);
+}
+function openQty(p,upto){return Math.max(0,(+p.qty||0)-soldQty(p,upto));}
+function proceeds(p,upto){
+  return (p.sells||[]).reduce(function(a,s){return a+((upto==null||s.date<=upto)?(+s.qty||0)*(+s.price||0):0);},0);
+}
+function realizedPL(p,upto){
+  return (p.sells||[]).reduce(function(a,s){
+    return a+((upto==null||s.date<=upto)?(+s.qty||0)*((+s.price||0)-(+p.price||0)):0);},0);
+}
+const isClosed=p=>openQty(p)<=1e-9;
 
-                    portfolio.forEach(stock => {
-                        const buyUnix = new Date(stock.date).getTime() / 1000;
-                        if (buyUnix <= currentUnix + 86400) { 
-                            dailyInvested += Number(stock.invested || 0); 
-                            let dayPrice = Number(stock.buyPrice || 0); 
-                            
-                            const history = stockHistories[stock.ticker];
-                            let lastKnownPrice = -1;
-                            
-                            if (history && history.t) {
-                                // Find the closest historical price on or before this day
-                                for (let j = history.t.length - 1; j >= 0; j--) {
-                                    if (history.t[j] <= currentUnix + 86400) {
-                                        lastKnownPrice = history.c[j];
-                                        break;
-                                    }
-                                }
-                            }
+/* snapshot of one lot at the latest available price */
+function snapshot(p){
+  const q=openQty(p), last=lastClose(p.symbol), prev=prevClose(p.symbol);
+  const cost=q*(+p.price||0);
+  const value=last==null?null:q*last;
+  const unreal=value==null?null:value-cost;
+  const real=realizedPL(p);
+  const investedAll=(+p.qty||0)*(+p.price||0);
+  const totalPL=(unreal==null?0:unreal)+real-(+p.fee||0);
+  const dayPL=(last==null||prev==null)?null:q*(last-prev);
+  return{
+    p:p,qty:q,price:last,prevPrice:prev,cost:cost,value:value,
+    unreal:unreal,real:real,fee:+p.fee||0,totalPL:totalPL,
+    totalPct:investedAll>0?totalPL/investedAll*100:null,
+    dayPL:dayPL, dayPct:(last!=null&&prev)?(last/prev-1)*100:null
+  };
+}
 
-                            if (lastKnownPrice !== -1) {
-                                dayPrice = stock.ticker.includes('.') ? lastKnownPrice : lastKnownPrice * usdToEurRate;
-                            } else {
-                                // Missing history (EU stocks): Interpolate a smooth line to today
-                                const totalDays = (Date.now() / 1000 - buyUnix) / 86400;
-                                const daysPassed = (currentUnix - buyUnix) / 86400;
-                                if (totalDays > 0 && daysPassed > 0) {
-                                    const targetPrice = stock.livePriceEur || dayPrice;
-                                    const priceDiff = targetPrice - Number(stock.buyPrice || 0);
-                                    const progress = Math.min(daysPassed / totalDays, 1);
-                                    dayPrice = Number(stock.buyPrice || 0) + (priceDiff * progress);
-                                }
-                            }
+/* ---------- the trading-day axis ---------- */
+function unionDates(){
+  const set={};
+  const syms={}; POS.forEach(function(p){syms[p.symbol]=1;});
+  Object.keys(syms).forEach(function(s){ (PX[s]?PX[s].dates:[]).forEach(function(d){set[d]=1;}); });
+  const b=PX[benchSym()]; if(b)b.dates.forEach(function(d){set[d]=1;});
+  return Object.keys(set).sort();
+}
+function rangeStart(all){
+  if(!all.length)return null;
+  const end=all[all.length-1];
+  switch(RANGE){
+    case'1M':return addMonths(end,-1);
+    case'3M':return addMonths(end,-3);
+    case'6M':return addMonths(end,-6);
+    case'YTD':return end.slice(0,4)+'-01-01';
+    case'1Y':return addMonths(end,-12);
+    case'3Y':return addMonths(end,-36);
+    case'5Y':return addMonths(end,-60);
+    default:return all[0];
+  }
+}
 
-                            // Ensure the very last point perfectly matches the live dashboard
-                            if (i === masterTimestamps.length - 1 && stock.livePriceEur) {
-                                dayPrice = stock.livePriceEur;
-                            }
+/* ============================================================
+   TIMELINE
+   value  = market value of open lots (+ cash from sales if enabled)
+   twr    = time weighted return, chained daily, external flows removed.
+            Each purchase only starts contributing on its own buy date,
+            which is exactly the "continuous from when it was added" behaviour.
+   ============================================================ */
+function buildTimeline(){
+  const all=unionDates();
+  if(!all.length)return null;
 
-                            dailyValue += (dayPrice * Number(stock.quantity || 0));
-                        }
-                    });
+  // clip to the first date anything was actually held, so the chart is not a flat prologue
+  let firstEvent=null;
+  POS.forEach(function(p){ if(!firstEvent||p.date<firstEvent)firstEvent=p.date; });
 
-                    if (dailyInvested > 0) {
-                        rawPortfolioPercentages.push(((dailyValue - dailyInvested) / dailyInvested) * 100);
-                    } else {
-                        rawPortfolioPercentages.push(null);
-                    }
-                }
+  const from=rangeStart(all), to=all[all.length-1];
+  const dates=all.filter(function(d){return d>=from&&d<=to&&(!firstEvent||d>=firstEvent||POS.length===0);});
+  if(!dates.length)return null;
 
-                // 4. Normalization (Locking the start of the timeframe to 0%)
-                let startingPercent = 0;
-                for (let p of rawPortfolioPercentages) {
-                    if (p !== null) {
-                        startingPercent = p;
-                        break;
-                    }
-                }
+  const cashOn=!!(+S.cashMode);
+  const value=[],invested=[],twrIdx=[],holdOnly=[];
+  let idx=1,prevV=null;
 
-                const finalPortfolioData = rawPortfolioPercentages.map(p => {
-                    if (p === null) return 0;
-                    return p - startingPercent;
-                });
+  for(let i=0;i<dates.length;i++){
+    const d=dates[i], prevD=i?dates[i-1]:null;
+    let hold=0, cost=0, cash=0, flow=0;
 
-                drawLineChart(labels, finalPortfolioData, spChartData);
-                statusEl.innerText = "Up to date";
+    for(let j=0;j<POS.length;j++){
+      const p=POS[j];
+      if(p.date>d)continue;
+      const q=openQty(p,d);
+      const px=closeAt(p.symbol,d);
+      if(q>0&&px!=null)hold+=q*px;
+      cost+=q*(+p.price||0);
+      const pr=proceeds(p,d);
+      if(cashOn)cash+=pr;
 
-            } catch (error) {
-                statusEl.innerText = "Chart unavailable.";
-            }
-        }
+      // external cash flows inside this step
+      if(prevD&&p.date>prevD&&p.date<=d)flow+=(+p.qty||0)*(+p.price||0);
+      (p.sells||[]).forEach(function(s){
+        if(prevD&&s.date>prevD&&s.date<=d&&!cashOn)flow-=(+s.qty||0)*(+s.price||0);
+      });
+    }
 
-        function drawLineChart(labels, portData, spData) {
-            const ctx = document.getElementById('portfolioChart').getContext('2d');
-            if (lineChart) lineChart.destroy(); 
+    const V=hold+cash;
+    value.push(V); invested.push(cost); holdOnly.push(hold);
+    if(prevV!=null&&prevV>1e-9){
+      const r=(V-flow)/prevV;
+      if(isFinite(r)&&r>0)idx*=r;
+    }
+    twrIdx.push(idx);
+    prevV=V;
+  }
 
-            lineChart = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: labels,
-                    datasets: [
-                        { label: 'My Portfolio (%)', data: portData, borderColor: '#2563eb', backgroundColor: 'rgba(37, 99, 235, 0.1)', fill: true, tension: 0.1 },
-                        { label: 'S&P 500 Proxy (%)', data: spData, borderColor: '#9ca3af', borderDash: [5, 5], tension: 0.1 }
-                    ]
-                },
-                options: { 
-                    responsive: true, 
-                    maintainAspectRatio: false,
-                    interaction: { mode: 'index', intersect: false },
-                    scales: { y: { ticks: { callback: function(value) { return value + '%'; } } } }
-                }
-            });
-        }
+  // rebase the return curve to 0% at the first day with real exposure
+  let base=null;
+  for(let i=0;i<dates.length;i++){ if(value[i]>1e-9){base=twrIdx[i];break;} }
+  const twrPct=twrIdx.map(function(v){return base?(v/base-1)*100:0;});
 
-        function drawAllocationChart() {
-            const ctx = document.getElementById('allocationChart').getContext('2d');
-            if (doughnutChart) doughnutChart.destroy();
+  // benchmark rebased over the same window
+  const bs=benchSym(), bench=[];
+  let b0=null;
+  for(let i=0;i<dates.length;i++){
+    const c=closeAt(bs,dates[i]);
+    if(c==null){bench.push(null);continue;}
+    if(b0==null)b0=c;
+    bench.push((c/b0-1)*100);
+  }
+  return{dates:dates,value:value,invested:invested,hold:holdOnly,twr:twrPct,bench:bench,from:from,to:to};
+}
 
-            if (portfolio.length === 0) return;
+/* headline numbers */
+function summary(tl){
+  let value=0,cost=0,dayPL=0,real=0,fees=0,investedAll=0,dayBase=0;
+  POS.forEach(function(p){
+    const s=snapshot(p);
+    if(s.value!=null)value+=s.value;
+    cost+=s.cost; real+=s.real; fees+=s.fee;
+    investedAll+=(+p.qty||0)*(+p.price||0);
+    if(s.dayPL!=null){dayPL+=s.dayPL; dayBase+=s.qty*s.prevPrice;}
+  });
+  const cash=(+S.cashMode)?POS.reduce(function(a,p){return a+proceeds(p);},0):0;
+  const unreal=value-cost;
+  const total=unreal+real-fees;
+  return{
+    value:value,cash:cash,total:value+cash,cost:cost,invested:investedAll,
+    unreal:unreal,real:real,fees:fees,pl:total,
+    plPct:investedAll>0?total/investedAll*100:null,
+    dayPL:dayPL, dayPct:dayBase>0?dayPL/dayBase*100:null,
+    twr:tl?tl.twr[tl.twr.length-1]:null,
+    bench:tl&&tl.bench.length?tl.bench[tl.bench.length-1]:null
+  };
+}
 
-            const allocationMap = {};
-            portfolio.forEach(stock => {
-                if (!allocationMap[stock.ticker]) allocationMap[stock.ticker] = 0;
-                allocationMap[stock.ticker] += Number(stock.currentValue || 0);
-            });
+/* ============================================================
+   LINE CHART  (hand rolled SVG, no libraries)
+   cfg = {dates:[], series:[{name,color,values:[],dash,fill}], fmt(v), zero}
+   ============================================================ */
+function niceTicks(min,max,n){
+  if(!isFinite(min)||!isFinite(max))return[0];
+  if(min===max){min-=1;max+=1;}
+  const raw=(max-min)/n, mag=Math.pow(10,Math.floor(Math.log10(raw))), norm=raw/mag;
+  const step=(norm<1.5?1:norm<3?2:norm<7?5:10)*mag;
+  const out=[]; for(let v=Math.ceil(min/step)*step; v<=max+1e-9; v+=step)out.push(+v.toFixed(10));
+  return out;
+}
+function labelDates(dates,n){
+  const out=[],step=Math.max(1,Math.floor(dates.length/n));
+  for(let i=0;i<dates.length;i+=step)out.push(i);
+  if(out[out.length-1]!==dates.length-1)out.push(dates.length-1);
+  return out;
+}
+function drawChart(host,cfg){
+  // viewBox units are fixed, so scale text and margins up when the box is drawn small
+  const W=1000;
+  const k=Math.min(2.4,Math.max(1,W/(host.clientWidth||W)));
+  const fs=+(10*k).toFixed(1);
+  const H=Math.round(340+fs*4), L=Math.round(22+fs*3.8), R=16, T=14, B=Math.round(14+fs*1.6);
+  const iw=W-L-R, ih=H-T-B;
+  const D=cfg.dates;
+  if(!D||!D.length){host.innerHTML='<div class="empty"><b>No data in this window</b>Add a position or widen the window.</div>';return;}
 
-            const labels = Object.keys(allocationMap);
-            const data = Object.values(allocationMap);
-            const bgColors = ['#2563eb', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899'];
+  let mn=Infinity,mx=-Infinity;
+  cfg.series.forEach(function(s){s.values.forEach(function(v){if(v!=null&&isFinite(v)){if(v<mn)mn=v;if(v>mx)mx=v;}});});
+  if(!isFinite(mn)){mn=0;mx=1;}
+  if(cfg.zero){mn=Math.min(mn,0);mx=Math.max(mx,0);}
+  const pad=(mx-mn)*0.08||1; mn-=pad; mx+=pad;
+  const X=i=>L+(D.length<2?iw/2:i/(D.length-1)*iw);
+  const Y=v=>T+ih-(v-mn)/(mx-mn)*ih;
 
-            doughnutChart = new Chart(ctx, {
-                type: 'doughnut',
-                data: {
-                    labels: labels,
-                    datasets: [{
-                        data: data,
-                        backgroundColor: bgColors.slice(0, labels.length),
-                        borderWidth: 2,
-                        borderColor: '#ffffff'
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: { position: 'right' },
-                        tooltip: {
-                            callbacks: {
-                                label: function(context) {
-                                    let label = context.label || '';
-                                    if (label) label += ': ';
-                                    const total = context.chart._metasets[context.datasetIndex].total;
-                                    const rawVal = Number(context.raw || 0);
-                                    const percentage = Math.round((rawVal / total) * 100) + '%';
-                                    return label + '€' + rawVal.toFixed(2) + ' (' + percentage + ')';
-                                }
-                            }
-                        }
-                    }
-                }
-            });
-        }
+  let g='';
+  niceTicks(mn,mx,5).forEach(function(t){
+    const y=Y(t); if(y<T-1||y>T+ih+1)return;
+    const zero=Math.abs(t)<1e-9&&cfg.zero;
+    g+='<line x1="'+L+'" y1="'+y.toFixed(1)+'" x2="'+(W-R)+'" y2="'+y.toFixed(1)+'" stroke="'+(zero?'#2a464f':'#1e333a')+'" stroke-width="1"/>';
+    g+='<text x="'+(L-9)+'" y="'+(y+fs*0.35).toFixed(1)+'" text-anchor="end" fill="#657573" font-family="IBM Plex Mono" font-size="'+fs+'">'+esc(cfg.fmt(t))+'</text>';
+  });
+  labelDates(D,Math.max(3,Math.round(7/k))).forEach(function(i){
+    const x=X(i);
+    g+='<text x="'+x.toFixed(1)+'" y="'+(H-fs*0.5).toFixed(1)+'" text-anchor="middle" fill="#657573" font-family="IBM Plex Mono" font-size="'+fs+'">'+D[i].slice(2)+'</text>';
+  });
 
-        async function addStock() {
-            const isin = document.getElementById('isinInput').value.trim().toUpperCase();
-            const buyDate = document.getElementById('dateInput').value;
-            const quantity = parseFloat(document.getElementById('qtyInput').value);
-            const buyPriceEur = parseFloat(document.getElementById('priceInput').value);
+  let paths='';
+  cfg.series.forEach(function(s,si){
+    let d='',open=false,first=null,lastPt=null;
+    for(let i=0;i<s.values.length;i++){
+      const v=s.values[i];
+      if(v==null||!isFinite(v)){open=false;continue;}
+      const x=X(i),y=Y(v);
+      d+=(open?'L':'M')+x.toFixed(1)+' '+y.toFixed(1)+' ';
+      if(!open&&first==null)first=[x,y];
+      open=true; lastPt=[x,y];
+    }
+    if(!d)return;
+    if(s.fill&&first&&lastPt){
+      paths+='<path d="'+d+'L'+lastPt[0].toFixed(1)+' '+(T+ih)+' L'+first[0].toFixed(1)+' '+(T+ih)+' Z" fill="url(#grad'+si+')" stroke="none"/>';
+    }
+    paths+='<path d="'+d+'" fill="none" stroke="'+s.color+'" stroke-width="'+((s.dash?1.4:1.9)*Math.sqrt(k)).toFixed(2)+'"'+(s.dash?' stroke-dasharray="4 4"':'')+' stroke-linejoin="round" stroke-linecap="round"/>';
+    if(lastPt&&!s.dash)paths+='<circle cx="'+lastPt[0].toFixed(1)+'" cy="'+lastPt[1].toFixed(1)+'" r="'+(3*Math.sqrt(k)).toFixed(1)+'" fill="'+s.color+'"/>';
+  });
 
-            if (!isin || !buyDate || isNaN(quantity) || isNaN(buyPriceEur) || quantity <= 0 || buyPriceEur <= 0) {
-                return alert("Please enter valid positive numbers and fill all fields.");
-            }
+  let defs='<defs>';
+  cfg.series.forEach(function(s,si){
+    defs+='<linearGradient id="grad'+si+'" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="'+s.color+'" stop-opacity=".26"/><stop offset="100%" stop-color="'+s.color+'" stop-opacity="0"/></linearGradient>';
+  });
+  defs+='</defs>';
 
-            const btn = document.getElementById('addBtn');
-            btn.innerText = "Loading..."; btn.disabled = true;
+  host.innerHTML='<svg viewBox="0 0 '+W+' '+H+'">'+defs+g+paths+
+    '<line id="cross" x1="0" y1="'+T+'" x2="0" y2="'+(T+ih)+'" stroke="#d9a441" stroke-width="1" opacity="0"/>'+
+    '<rect id="hit" x="'+L+'" y="'+T+'" width="'+iw+'" height="'+ih+'" fill="transparent"/></svg>'+
+    '<div class="tip"></div>';
 
-            try {
-                const searchRes = await fetch(`https://finnhub.io/api/v1/search?q=${isin}&token=${API_KEY}`);
-                const searchData = await searchRes.json();
-                if (!searchData.result || searchData.result.length === 0) throw new Error("Could not find a stock matching this ISIN.");
-                
-                const ticker = searchData.result[0].symbol;
-                const companyName = searchData.result[0].description;
+  const svg=host.querySelector('svg'), tip=host.querySelector('.tip'), cross=host.querySelector('#cross');
+  function move(ev){
+    const pt=ev.touches?ev.touches[0]:ev;
+    const r=svg.getBoundingClientRect();
+    const px=(pt.clientX-r.left)/r.width*W;
+    let i=Math.round((px-L)/iw*(D.length-1));
+    i=Math.max(0,Math.min(D.length-1,i));
+    const x=X(i);
+    cross.setAttribute('x1',x);cross.setAttribute('x2',x);cross.setAttribute('opacity','.65');
+    let html='<div style="color:#9aa8a6;margin-bottom:4px">'+D[i]+'</div>';
+    cfg.series.forEach(function(s){
+      const v=s.values[i];
+      html+='<div style="color:'+s.color+'">'+esc(s.name)+': <span style="color:#e8e4d9">'+(v==null?'—':cfg.fmt(v))+'</span></div>';
+    });
+    tip.innerHTML=html; tip.style.opacity='1';
+    const hostW=host.clientWidth, left=x/W*hostW;
+    tip.style.left=Math.min(Math.max(6,left+12),hostW-tip.offsetWidth-6)+'px';
+    tip.style.top='10px';
+  }
+  function out(){tip.style.opacity='0';cross.setAttribute('opacity','0');}
+  svg.addEventListener('mousemove',move);
+  svg.addEventListener('mouseleave',out);
+  svg.addEventListener('touchstart',move,{passive:true});
+  svg.addEventListener('touchmove',move,{passive:true});
+  svg.addEventListener('touchend',out);
+}
 
-                const quoteRes = await fetch(`https://finnhub.io/api/v1/quote?symbol=${ticker}&token=${API_KEY}`);
-                const quoteData = await quoteRes.json();
-                
-                if (!quoteData || typeof quoteData.c !== 'number' || quoteData.c <= 0) {
-                    throw new Error("Live price unavailable. The API may restrict this asset on the free tier.");
-                }
+/* ============================================================
+   TREEMAP  — recursive binary split, keeps aspect ratios sane
+   ============================================================ */
+function treemap(nodes,x,y,w,h,out){
+  if(!nodes.length||w<=0||h<=0)return;
+  if(nodes.length===1){out.push(Object.assign({},nodes[0],{x:x,y:y,w:w,h:h}));return;}
+  const total=nodes.reduce(function(a,n){return a+n.value;},0);
+  let acc=0,i=0;
+  while(i<nodes.length-1&&acc+nodes[i].value<=total/2){acc+=nodes[i].value;i++;}
+  if(i===0){acc=nodes[0].value;i=1;}
+  const a=nodes.slice(0,i), b=nodes.slice(i), ratio=total?acc/total:0.5;
+  if(w>=h){treemap(a,x,y,w*ratio,h,out);treemap(b,x+w*ratio,y,w*(1-ratio),h,out);}
+  else{treemap(a,x,y,w,h*ratio,out);treemap(b,x,y+h*ratio,w,h*(1-ratio),out);}
+}
+function heatColor(pct,scale){
+  if(pct==null||!isFinite(pct))return'#2a3438';
+  const t=Math.max(-1,Math.min(1,pct/(scale||3)));
+  const neutral=[44,59,62], up=[42,160,109], down=[192,57,47];
+  const target=t>=0?up:down, k=Math.abs(t);
+  const c=neutral.map(function(n,i){return Math.round(n+(target[i]-n)*Math.pow(k,.75));});
+  return'rgb('+c[0]+','+c[1]+','+c[2]+')';
+}
+function drawHeatmap(host){
+  const bySym={};
+  POS.forEach(function(p){
+    const s=snapshot(p);
+    if(s.qty<=1e-9||s.value==null)return;
+    const k=p.symbol;
+    if(!bySym[k])bySym[k]={symbol:k,name:p.name||k,value:0,cost:0,dayPL:0,dayBase:0,totalPL:0,invested:0};
+    const b=bySym[k];
+    b.value+=s.value; b.cost+=s.cost; b.invested+=(+p.qty||0)*(+p.price||0);
+    b.totalPL+=s.totalPL;
+    if(s.dayPL!=null){b.dayPL+=s.dayPL;b.dayBase+=s.qty*s.prevPrice;}
+  });
+  const nodes=Object.keys(bySym).map(function(k){
+    const b=bySym[k];
+    b.dayPct=b.dayBase>0?b.dayPL/b.dayBase*100:null;
+    b.totalPct=b.invested>0?b.totalPL/b.invested*100:null;
+    return b;
+  }).sort(function(a,b){return b.value-a.value;});
 
-                let livePrice = quoteData.c;
-                let livePriceEur = livePrice;
-                if (!ticker.includes('.')) {
-                    const fxRes = await fetch('https://open.er-api.com/v6/latest/USD');
-                    const fxData = await fxRes.json();
-                    livePriceEur = livePrice * (fxData.rates.EUR || 1);
-                }
+  if(!nodes.length){host.innerHTML='<div class="empty"><b>Nothing to map</b>Open positions appear here sized by their share of the portfolio.</div>';return;}
 
-                portfolio.push({
-                    id: Date.now(), 
-                    isin: isin,
-                    ticker: ticker,
-                    name: companyName,
-                    date: buyDate,
-                    quantity: quantity,
-                    buyPrice: buyPriceEur,
-                    invested: quantity * buyPriceEur,
-                    currentValue: quantity * livePriceEur,
-                    livePriceEur: livePriceEur
-                });
+  const W=1000,H=Math.max(360,Math.min(620,120+nodes.length*26));
+  const rects=[]; treemap(nodes.map(function(n){return{ref:n,value:Math.max(n.value,1e-6)};}),0,0,W,H,rects);
+  const totalV=nodes.reduce(function(a,n){return a+n.value;},0);
+  const scale=+S.heatScale||3;
 
-                saveAndRender();
-                await buildHistoricalChart(currentTimeframe); 
+  const hk=Math.min(2.2,Math.max(1,W/(host.clientWidth||W)));
+  let svg='<svg id="heat" viewBox="0 0 '+W+' '+H+'">';
+  rects.forEach(function(r){
+    const n=r.ref, pct=HEAT_MODE==='day'?n.dayPct:n.totalPct;
+    const col=heatColor(pct,scale);
+    const wgt=totalV?n.value/totalV*100:0;
+    const small=r.w<74*hk||r.h<40*hk, tiny=r.w<34*hk||r.h<22*hk;
+    const cx=r.x+r.w/2, cy=r.y+r.h/2;
+    svg+='<g class="heat-cell"><title>'+esc(n.symbol)+' — '+esc(n.name)+'\n'+fmtMoney(n.value)+'  ('+wgt.toFixed(1)+'% of portfolio)\nDay '+fmtPct(n.dayPct)+'   Total '+fmtPct(n.totalPct)+'</title>';
+    svg+='<rect x="'+r.x.toFixed(1)+'" y="'+r.y.toFixed(1)+'" width="'+Math.max(0,r.w-1).toFixed(1)+'" height="'+Math.max(0,r.h-1).toFixed(1)+'" fill="'+col+'" rx="2"/>';
+    if(!tiny){
+      const fs=Math.max(9*hk,Math.min(24,Math.sqrt(r.w*r.h)/7));
+      svg+='<text x="'+cx.toFixed(1)+'" y="'+(cy-(small?1:5)).toFixed(1)+'" text-anchor="middle" font-size="'+fs.toFixed(1)+'" font-weight="600">'+esc(n.symbol)+'</text>';
+      if(!small){
+        svg+='<text x="'+cx.toFixed(1)+'" y="'+(cy+fs*0.95).toFixed(1)+'" text-anchor="middle" font-size="'+(fs*0.62).toFixed(1)+'" opacity=".92">'+fmtPct(pct)+'</text>';
+        if(r.h>92*hk)svg+='<text x="'+cx.toFixed(1)+'" y="'+(cy+fs*1.9).toFixed(1)+'" text-anchor="middle" font-size="'+(fs*0.5).toFixed(1)+'" opacity=".7">'+wgt.toFixed(1)+'%</text>';
+      }
+    }
+    svg+='</g>';
+  });
+  host.innerHTML=svg+'</svg>';
+}
 
-                document.getElementById('isinInput').value = ''; document.getElementById('dateInput').value = '';
-                document.getElementById('qtyInput').value = ''; document.getElementById('priceInput').value = '';
+/* ============================================================
+   RENDER
+   ============================================================ */
+const RANGES=['1M','3M','6M','YTD','1Y','3Y','5Y','MAX'];
+function buildRanges(){
+  $('#ranges').innerHTML=RANGES.map(function(r){return'<button data-r="'+r+'" class="'+(r===RANGE?'on':'')+'">'+r+'</button>';}).join('');
+}
+function kpiCard(k,v,sub,klass){
+  return'<div class="kpi"><div class="kpi-k">'+k+'</div><div class="kpi-v '+(klass||'')+'">'+v+'</div><div class="kpi-s">'+(sub||'')+'</div></div>';
+}
+function renderKPIs(tl,sm){
+  const alpha=(sm.twr!=null&&sm.bench!=null)?sm.twr-sm.bench:null;
+  $('#kpis').innerHTML=
+    kpiCard('Portfolio value',fmtMoney(sm.total),(+S.cashMode&&sm.cash>0?'incl. '+fmtMoney(sm.cash)+' cash':fmtMoney(sm.cost)+' at cost'))+
+    kpiCard('Today',fmtMoney(sm.dayPL),fmtPct(sm.dayPct),cls(sm.dayPL))+
+    kpiCard('Total profit',fmtMoney(sm.pl),fmtPct(sm.plPct)+' on '+fmtMoney(sm.invested)+' invested',cls(sm.pl))+
+    kpiCard('Return, '+RANGE,fmtPct(sm.twr),'time weighted',cls(sm.twr))+
+    kpiCard(esc(benchSym())+', '+RANGE,fmtPct(sm.bench),'benchmark',cls(sm.bench))+
+    kpiCard('Vs benchmark',fmtPct(alpha),alpha==null?'—':(alpha>=0?'ahead':'behind'),cls(alpha))+
+    kpiCard('Realised',fmtMoney(sm.real),sm.fees?'after '+fmtMoney(sm.fees)+' fees':'from closed lots',cls(sm.real));
+}
+function renderMainChart(tl){
+  const host=$('#mainChart');
+  if(!tl||!POS.length){
+    host.innerHTML='<div class="empty"><b>Empty portfolio</b>Add your first buy and the value and return curves build from that date onward.</div>';
+    $('#mainLegend').innerHTML=''; return;
+  }
+  const series=[];
+  if(CHART_MODE==='money'){
+    series.push({name:'Portfolio',color:'#3fb984',values:tl.value,fill:true});
+    if($('#showCost').checked)series.push({name:'Invested',color:'#d9a441',values:tl.invested,dash:true});
+    drawChart(host,{dates:tl.dates,series:series,fmt:function(v){return fmtMoney(v,0);},zero:false});
+    $('#chartTitle').textContent='Portfolio value';
+  }else{
+    series.push({name:'Portfolio',color:'#3fb984',values:tl.twr,fill:true});
+    if($('#showBench').checked)series.push({name:benchSym(),color:'#7f9bd1',values:tl.bench});
+    drawChart(host,{dates:tl.dates,series:series,fmt:function(v){return v.toFixed(1)+'%';},zero:true});
+    $('#chartTitle').textContent='Return, time weighted';
+  }
+  $('#mainLegend').innerHTML=series.map(function(s){
+    return'<span><i style="background:'+s.color+'"></i>'+esc(s.name)+'</span>';}).join('')+
+    '<span style="margin-left:auto">'+tl.dates[0]+' → '+tl.dates[tl.dates.length-1]+'</span>';
+}
+function renderMovers(){
+  const rows=POS.filter(function(p){return openQty(p)>1e-9;}).map(snapshot)
+    .filter(function(s){return s.dayPL!=null;})
+    .sort(function(a,b){return Math.abs(b.dayPL)-Math.abs(a.dayPL);}).slice(0,8);
+  if(!rows.length){$('#moversTable').innerHTML='<tbody><tr><td class="empty">Nothing open yet.</td></tr></tbody>';return;}
+  $('#moversTable').innerHTML='<thead><tr><th>Symbol</th><th class="num">Price</th><th class="num">Day</th><th class="num">Day P/L</th><th class="num">Value</th></tr></thead><tbody>'+
+    rows.map(function(s){
+      return'<tr><td><span class="sym">'+esc(s.p.symbol)+'</span></td>'+
+        '<td class="num">'+fmtNum(s.price)+'</td>'+
+        '<td class="num '+cls(s.dayPct)+'">'+fmtPct(s.dayPct)+'</td>'+
+        '<td class="num '+cls(s.dayPL)+'">'+fmtMoney(s.dayPL)+'</td>'+
+        '<td class="num">'+fmtMoney(s.value)+'</td></tr>';}).join('')+'</tbody>';
+}
+function renderAlloc(){
+  const bySym={};
+  POS.forEach(function(p){
+    const s=snapshot(p); if(s.qty<=1e-9||s.value==null)return;
+    bySym[p.symbol]=(bySym[p.symbol]||0)+s.value;
+  });
+  const cash=(+S.cashMode)?POS.reduce(function(a,p){return a+proceeds(p);},0):0;
+  if(cash>0)bySym['Cash']=cash;
+  const list=Object.keys(bySym).map(function(k){return[k,bySym[k]];}).sort(function(a,b){return b[1]-a[1];});
+  const total=list.reduce(function(a,x){return a+x[1];},0);
+  if(!total){$('#alloc').innerHTML='<div class="empty">No open positions.</div>';return;}
+  $('#alloc').innerHTML=list.map(function(x){
+    const pct=x[1]/total*100;
+    return'<div style="margin-bottom:9px"><div style="display:flex;font-size:12px;margin-bottom:3px"><span class="sym">'+esc(x[0])+'</span>'+
+      '<span class="mono" style="margin-left:auto;color:#9aa8a6">'+pct.toFixed(1)+'% · '+fmtMoney(x[1],0)+'</span></div>'+
+      '<div style="height:6px;background:#0d1a1d;border-radius:3px;overflow:hidden"><div style="height:100%;width:'+pct.toFixed(2)+'%;background:'+(x[0]==='Cash'?'#657573':'#3fb984')+'"></div></div></div>';
+  }).join('');
+}
+function renderHoldings(){
+  const t=$('#holdTable');
+  if(!POS.length){t.innerHTML='<tbody><tr><td><div class="empty"><b>No positions</b>Use “Add position” to record your first buy.</div></td></tr></tbody>';return;}
+  const showClosed=$('#showClosed').checked;
+  const groups={};
+  POS.forEach(function(p){(groups[p.symbol]=groups[p.symbol]||[]).push(p);});
 
-            } catch (error) {
-                alert("Error: " + error.message);
-            } finally {
-                btn.innerText = "Add to Portfolio"; btn.disabled = false;
-            }
-        }
+  let html='<thead><tr><th>Symbol</th><th class="num">Qty</th><th class="num">Cost</th><th class="num">Price</th><th class="num">Value</th><th class="num">Weight</th><th class="num">Day</th><th class="num">Day P/L</th><th class="num">Total P/L</th><th class="num">Total %</th><th class="num">Realised</th><th></th></tr></thead><tbody>';
+  let grand=0; POS.forEach(function(p){const s=snapshot(p);if(s.value!=null)grand+=s.value;});
 
-        function removeStock(id) {
-            portfolio = portfolio.filter(stock => stock.id !== id);
-            saveAndRender();
-            buildHistoricalChart(currentTimeframe); 
-        }
+  Object.keys(groups).sort().forEach(function(sym){
+    const lots=groups[sym].slice().sort(function(a,b){return a.date<b.date?-1:1;});
+    const snaps=lots.map(snapshot);
+    const open=snaps.reduce(function(a,s){return a+s.qty;},0);
+    if(open<=1e-9&&!showClosed)return;
+    const value=snaps.reduce(function(a,s){return a+(s.value||0);},0);
+    const cost=snaps.reduce(function(a,s){return a+s.cost;},0);
+    const dayPL=snaps.reduce(function(a,s){return a+(s.dayPL||0);},0);
+    const totalPL=snaps.reduce(function(a,s){return a+s.totalPL;},0);
+    const real=snaps.reduce(function(a,s){return a+s.real;},0);
+    const inv=lots.reduce(function(a,p){return a+(+p.qty||0)*(+p.price||0);},0);
+    const px=lastClose(sym), pv=prevClose(sym);
+    const dayPct=(px!=null&&pv)?(px/pv-1)*100:null;
+    const nm=lots[0].name||'';
+    const bad=FAILED[sym];
 
-        function saveAndRender() {
-            localStorage.setItem('myPortfolio', JSON.stringify(portfolio));
-            renderTable();
-            updateDashboard();
-            drawAllocationChart();
-        }
+    html+='<tr class="grp"><td><span class="sym">'+esc(sym)+'</span><span class="nm">'+esc(nm)+'</span>'+
+      (bad?'<span class="nm" style="color:var(--down)"> · '+esc(bad)+'</span>':'')+'</td>'+
+      '<td class="num">'+fmtNum(open,open%1?4:0)+'</td>'+
+      '<td class="num">'+(open>0?fmtNum(cost/open):'—')+'</td>'+
+      '<td class="num">'+fmtNum(px)+'</td>'+
+      '<td class="num">'+fmtMoney(value)+'</td>'+
+      '<td class="num">'+(grand?(value/grand*100).toFixed(1)+'%':'—')+'</td>'+
+      '<td class="num '+cls(dayPct)+'">'+fmtPct(dayPct)+'</td>'+
+      '<td class="num '+cls(dayPL)+'">'+fmtMoney(dayPL)+'</td>'+
+      '<td class="num '+cls(totalPL)+'">'+fmtMoney(totalPL)+'</td>'+
+      '<td class="num '+cls(totalPL)+'">'+fmtPct(inv?totalPL/inv*100:null)+'</td>'+
+      '<td class="num '+cls(real)+'">'+(real?fmtMoney(real):'—')+'</td><td></td></tr>';
 
-        function renderTable() {
-            const tableBody = document.getElementById('portfolioTable');
-            tableBody.innerHTML = ''; 
+    {
+      lots.forEach(function(p,i){
+        const s=snaps[i], closed=s.qty<=1e-9;
+        if(closed&&!showClosed)return;
+        const linv=(+p.qty||0)*(+p.price||0);
+        html+='<tr class="lot'+(closed?' closed':'')+'"><td>'+p.date+' · '+fmtNum(+p.qty,(+p.qty)%1?4:0)+' @ '+fmtNum(+p.price)+'</td>'+
+          '<td class="num">'+fmtNum(s.qty,s.qty%1?4:0)+'</td>'+
+          '<td class="num">'+fmtNum(+p.price)+'</td>'+
+          '<td class="num">'+fmtNum(s.price)+'</td>'+
+          '<td class="num">'+(s.value==null?'—':fmtMoney(s.value))+'</td><td class="num"></td>'+
+          '<td class="num '+cls(s.dayPct)+'">'+fmtPct(s.dayPct)+'</td>'+
+          '<td class="num '+cls(s.dayPL)+'">'+(s.dayPL==null?'—':fmtMoney(s.dayPL))+'</td>'+
+          '<td class="num '+cls(s.totalPL)+'">'+fmtMoney(s.totalPL)+'</td>'+
+          '<td class="num '+cls(s.totalPL)+'">'+fmtPct(linv?s.totalPL/linv*100:null)+'</td>'+
+          '<td class="num '+cls(s.real)+'">'+(s.real?fmtMoney(s.real):'—')+'</td>'+
+          '<td class="num"><button class="btn ghost sm" data-sell="'+p.id+'">Sell</button> '+
+          '<button class="btn ghost sm danger" data-del="'+p.id+'">Delete</button></td></tr>';
+      });
+    }
+  });
+  t.innerHTML=html+'</tbody>';
+}
+function renderAll(){
+  const tl=buildTimeline();
+  const sm=summary(tl);
+  renderKPIs(tl,sm); renderMainChart(tl); renderMovers(); renderAlloc(); renderHoldings();
+  drawHeatmap($('#heatWrap'));
+  $('#srcLabel').textContent=prov().label.toLowerCase();
+  const anyFail=Object.keys(FAILED).length;
+  $('#srcDot').className='dot'+(anyFail?' warn':'');
+  $('#srcDot').parentNode.title=anyFail?'Some symbols failed: '+Object.keys(FAILED).join(', '):'';
+  $('#scaleMin').textContent='−'+(+S.heatScale||3)+'%';
+  $('#scaleMax').textContent='+'+(+S.heatScale||3)+'%';
+}
 
-            portfolio.forEach(stock => {
-                const inv = Number(stock.invested || 0);
-                const cur = Number(stock.currentValue || 0);
-                const qty = Number(stock.quantity || 1);
-                const buy = Number(stock.buyPrice || 0);
-                
-                const plDollars = cur - inv;
-                const plPercent = inv > 0 ? (plDollars / inv) * 100 : 0;
-                const color = plDollars >= 0 ? "profit" : "loss";
-                const sign = plDollars >= 0 ? "+" : "";
-                const currentUnit = stock.livePriceEur ? Number(stock.livePriceEur) : (cur / qty);
+/* ============================================================
+   EVENTS
+   ============================================================ */
+$$('nav button').forEach(function(b){
+  b.onclick=function(){
+    $$('nav button').forEach(function(x){x.classList.toggle('on',x===b);});
+    $$('.view').forEach(function(v){v.classList.toggle('on',v.id==='view-'+b.dataset.view);});
+    if(b.dataset.view==='heat')drawHeatmap($('#heatWrap'));
+  };
+});
+$('#ranges').onclick=function(e){
+  const b=e.target.closest('button'); if(!b)return;
+  RANGE=b.dataset.r; store.set('lg_range',RANGE); buildRanges(); renderAll();
+};
+$('#chartMode').onclick=function(e){
+  const b=e.target.closest('button'); if(!b)return;
+  CHART_MODE=b.dataset.mode;
+  $$('#chartMode button').forEach(function(x){x.classList.toggle('on',x===b);});
+  renderAll();
+};
+$('#heatMode').onclick=function(e){
+  const b=e.target.closest('button'); if(!b)return;
+  HEAT_MODE=b.dataset.hm;
+  $$('#heatMode button').forEach(function(x){x.classList.toggle('on',x===b);});
+  drawHeatmap($('#heatWrap'));
+};
+$('#heatScale').onchange=function(){S.heatScale=Math.max(.5,+this.value||3);saveSettings();renderAll();};
+$('#showBench').onchange=$('#showCost').onchange=function(){renderAll();};
+$('#showClosed').onchange=renderHoldings;
+$('#refreshBtn').onclick=async function(){
+  this.disabled=true; this.textContent='Fetching…';
+  await loadAll(true); renderAll();
+  this.disabled=false; this.textContent='Refresh prices';
+  const f=Object.keys(FAILED);
+  toast(f.length?'Could not load: '+f.join(', '):'Prices updated');
+};
+$('#holdTable').onclick=function(e){
+  const s=e.target.closest('[data-sell]'), d=e.target.closest('[data-del]');
+  if(s)openSell(s.dataset.sell);
+  if(d){
+    const p=POS.find(function(x){return x.id===d.dataset.del;});
+    if(p&&confirm('Delete the '+p.symbol+' lot bought on '+p.date+'? This cannot be undone.')){
+      POS=POS.filter(function(x){return x.id!==p.id;}); savePositions(); renderAll(); toast('Position deleted');
+    }
+  }
+};
+$$('[data-close]').forEach(function(b){b.onclick=function(){b.closest('.modal').classList.remove('on');};});
+$$('.modal').forEach(function(m){m.onclick=function(e){if(e.target===m)m.classList.remove('on');};});
+document.addEventListener('keydown',function(e){if(e.key==='Escape')$$('.modal').forEach(function(m){m.classList.remove('on');});});
 
-                tableBody.innerHTML += `
-                    <tr>
-                        <td><strong>${stock.name}</strong><span class="subtext">${stock.ticker}</span></td>
-                        <td>${stock.date}<span class="subtext">${qty} sh @ €${buy.toFixed(2)}</span></td>
-                        <td>€${inv.toFixed(2)}</td>
-                        <td>€${cur.toFixed(2)}<span class="subtext">Live: €${currentUnit.toFixed(2)}/sh</span></td>
-                        <td class="${color}">${sign}€${plDollars.toFixed(2)}<span class="subtext ${color}">${sign}${plPercent.toFixed(2)}%</span></td>
-                        <td><button class="delete-btn" onclick="removeStock(${stock.id})">✕</button></td>
-                    </tr>
-                `;
-            });
-        }
+/* ---------- search + add ---------- */
+let PICKED=null, searchTimer=null;
+$('#addBtn').onclick=function(){
+  PICKED=null; $('#pickedBox').style.display='none'; $('#searchResults').style.display='none';
+  $('#searchInput').value=''; $('#addErr').textContent='';
+  $('#inDate').value=today(); $('#inQty').value=''; $('#inPrice').value=''; $('#inFee').value='0';
+  $('#searchHint').textContent=S.provider==='yahoo'?'Ticker, ISIN or company name.':
+    S.provider==='alphavantage'?'Ticker or company name. ISIN lookup is not supported here.':
+    S.provider==='stooq'?'No search endpoint — type the exact Stooq symbol, e.g. aapl.us or sap.de.':
+    'Search the built-in demo list by ticker, name or ISIN.';
+  $('#addModal').classList.add('on'); $('#searchInput').focus();
+};
+$('#searchInput').oninput=function(){
+  const q=this.value.trim();
+  clearTimeout(searchTimer);
+  if(q.length<2){$('#searchResults').style.display='none';return;}
+  searchTimer=setTimeout(function(){runSearch(q);},320);
+};
+async function runSearch(q){
+  const box=$('#searchResults');
+  box.style.display='block';
+  box.innerHTML='<div style="cursor:default;color:#657573">Searching…</div>';
+  let list=[],err=null;
+  try{list=await prov().search(q);}catch(e){err=e.message||String(e);}
+  let html='';
+  if(err)html+='<div style="cursor:default"><small style="color:var(--down)">'+esc(err)+'</small></div>';
+  list.forEach(function(r){
+    html+='<div data-sym="'+esc(r.symbol)+'" data-name="'+esc(r.name)+'"><b>'+esc(r.symbol)+'</b><small>'+esc(r.name)+'</small><em>'+esc(r.type||'')+'</em></div>';
+  });
+  html+='<div data-sym="'+esc(q.toUpperCase())+'" data-name=""><b>'+esc(q.toUpperCase())+'</b><small>use exactly as typed</small><em>manual</em></div>';
+  box.innerHTML=html;
+}
+$('#searchResults').onclick=async function(e){
+  const row=e.target.closest('[data-sym]'); if(!row)return;
+  PICKED={symbol:row.dataset.sym,name:row.dataset.name};
+  $('#pickedSym').textContent=PICKED.symbol;
+  $('#pickedName').textContent=PICKED.name||'';
+  $('#pickedBox').style.display='block';
+  $('#searchResults').style.display='none';
+  $('#addErr').textContent='Loading price history…';
+  await loadSeries(PICKED.symbol);
+  $('#addErr').textContent=FAILED[PICKED.symbol]?('No price history: '+FAILED[PICKED.symbol]):'';
+  fillPriceFromDate();
+  $('#inQty').focus();
+};
+$('#clearPick').onclick=function(){PICKED=null;$('#pickedBox').style.display='none';$('#searchInput').focus();};
+function fillPriceFromDate(){
+  if(!PICKED)return;
+  const c=closeAt(PICKED.symbol,$('#inDate').value||today());
+  if(c!=null)$('#inPrice').value=(+c).toFixed(4).replace(/0+$/,'').replace(/\.$/,'');
+}
+$('#fillPrice').onclick=fillPriceFromDate;
+$('#inDate').onchange=function(){if(!$('#inPrice').value)fillPriceFromDate();};
+$('#saveAdd').onclick=function(){
+  const err=$('#addErr');
+  if(!PICKED){err.textContent='Pick an instrument first.';return;}
+  const date=$('#inDate').value, qty=parseFloat($('#inQty').value), price=parseFloat($('#inPrice').value);
+  if(!date){err.textContent='A buy date is required.';return;}
+  if(!(qty>0)){err.textContent='Quantity must be greater than zero.';return;}
+  if(!(price>=0)||isNaN(price)){err.textContent='Enter the price you paid per share.';return;}
+  POS.push({id:uid(),symbol:PICKED.symbol,name:PICKED.name||'',date:date,qty:qty,price:price,fee:parseFloat($('#inFee').value)||0,sells:[]});
+  savePositions(); $('#addModal').classList.remove('on'); renderAll();
+  toast(PICKED.symbol+' added');
+};
 
-        function updateDashboard() {
-            let totalInvested = 0; let totalValue = 0;
-            portfolio.forEach(stock => { 
-                totalInvested += Number(stock.invested || 0); 
-                totalValue += Number(stock.currentValue || 0); 
-            });
+/* ---------- sell ---------- */
+let SELL_ID=null;
+function openSell(id){
+  const p=POS.find(function(x){return x.id===id;}); if(!p)return;
+  SELL_ID=id;
+  const rem=openQty(p);
+  $('#sellCtx').innerHTML='<b class="sym">'+esc(p.symbol)+'</b> — bought '+p.date+', '+fmtNum(+p.qty)+' @ '+fmtNum(+p.price)+'. Remaining: <b>'+fmtNum(rem)+'</b>';
+  $('#sellDate').value=today(); $('#sellQty').value=rem; $('#sellErr').textContent='';
+  const c=lastClose(p.symbol); $('#sellPrice').value=c==null?'':(+c).toFixed(2);
+  $('#sellList').innerHTML=(p.sells||[]).length?
+    '<div class="tag" style="margin-bottom:6px">Recorded sales</div>'+p.sells.map(function(s,i){
+      return'<div style="display:flex;gap:10px;font-family:\'IBM Plex Mono\';font-size:12px;padding:5px 0;border-bottom:1px solid var(--line)">'+
+        '<span>'+s.date+'</span><span>'+fmtNum(+s.qty)+' @ '+fmtNum(+s.price)+'</span>'+
+        '<button class="btn ghost sm danger" data-unsell="'+i+'" style="margin-left:auto">Remove</button></div>';}).join(''):'';
+  $('#sellModal').classList.add('on');
+}
+$('#sellList').onclick=function(e){
+  const b=e.target.closest('[data-unsell]'); if(!b)return;
+  const p=POS.find(function(x){return x.id===SELL_ID;});
+  p.sells.splice(+b.dataset.unsell,1); savePositions(); openSell(SELL_ID); renderAll();
+};
+$('#saveSell').onclick=function(){
+  const p=POS.find(function(x){return x.id===SELL_ID;}); if(!p)return;
+  const err=$('#sellErr');
+  const date=$('#sellDate').value, qty=parseFloat($('#sellQty').value), price=parseFloat($('#sellPrice').value);
+  if(!date){err.textContent='A sell date is required.';return;}
+  if(date<p.date){err.textContent='The sell date is before the buy date.';return;}
+  if(!(qty>0)){err.textContent='Quantity must be greater than zero.';return;}
+  if(qty>openQty(p)+1e-9){err.textContent='Only '+fmtNum(openQty(p))+' left in this lot.';return;}
+  if(!(price>=0)||isNaN(price)){err.textContent='Enter the price you sold at.';return;}
+  p.sells=p.sells||[]; p.sells.push({date:date,qty:qty,price:price});
+  p.sells.sort(function(a,b){return a.date<b.date?-1:1;});
+  savePositions(); $('#sellModal').classList.remove('on'); renderAll(); toast('Sale recorded');
+};
 
-            const totalPL = totalValue - totalInvested;
-            const color = totalPL >= 0 ? "#16a34a" : "#dc2626";
-            const sign = totalPL >= 0 ? "+" : "";
+/* ---------- settings ---------- */
+function fillSettings(){
+  $('#setProvider').value=S.provider; $('#setProxy').value=S.proxy||'';
+  $('#setKey').value=S.avKey||''; $('#setBench').value=S.benchmark||'';
+  $('#setBench').placeholder=prov().bench;
+  $('#setCache').value=S.cacheHours; $('#setCurrency').value=S.currency;
+  $('#setCash').value=String(+S.cashMode||0); $('#heatScale').value=S.heatScale;
+  $('#provHint').textContent=prov().hint;
+  $('#proxyField').style.display=prov().needs==='proxy'?'block':'none';
+  $('#keyField').style.display=prov().needs==='key'?'block':'none';
+  $('#storeNote').innerHTML=store.persistent
+    ? 'Positions and settings live in this browser only, under this site\'s local storage. Nothing is sent anywhere except the price requests you configure. Export a copy before clearing browser data.'
+    : '<span style="color:var(--down)">Local storage is unavailable here, so this session is held in memory only and will vanish on reload. Export your portfolio to keep it.</span>';
+  $('#jsonBox').value=JSON.stringify(POS,null,1);
+}
+$('#setProvider').onchange=function(){
+  S.provider=this.value; $('#provHint').textContent=prov().hint;
+  $('#proxyField').style.display=prov().needs==='proxy'?'block':'none';
+  $('#keyField').style.display=prov().needs==='key'?'block':'none';
+  $('#setBench').placeholder=prov().bench;
+};
+$('#saveSettings').onclick=async function(){
+  S.provider=$('#setProvider').value;
+  S.proxy=$('#setProxy').value.trim();
+  S.avKey=$('#setKey').value.trim();
+  S.benchmark=$('#setBench').value.trim();
+  S.cacheHours=Math.max(0,+$('#setCache').value||0);
+  S.currency=($('#setCurrency').value.trim()||'USD').toUpperCase();
+  S.cashMode=+$('#setCash').value;
+  saveSettings();
+  Object.keys(PX).forEach(function(k){delete PX[k];});
+  Object.keys(FAILED).forEach(function(k){delete FAILED[k];});
+  this.disabled=true; this.textContent='Loading…';
+  await loadAll(false); fillSettings(); renderAll();
+  this.disabled=false; this.textContent='Save settings';
+  toast('Settings saved');
+};
+$('#exportBtn').onclick=function(){
+  const blob=new Blob([JSON.stringify({settings:S,positions:POS},null,2)],{type:'application/json'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob); a.download='ledger-portfolio.json'; a.click();
+  setTimeout(function(){URL.revokeObjectURL(a.href);},2000);
+};
+$('#importBtn').onclick=function(){
+  const inp=document.createElement('input'); inp.type='file'; inp.accept='.json,application/json';
+  inp.onchange=function(){
+    const f=inp.files[0]; if(!f)return;
+    const r=new FileReader();
+    r.onload=async function(){
+      try{
+        const d=JSON.parse(r.result);
+        POS=(d.positions||d||[]).map(function(p){return Object.assign({id:uid(),sells:[],fee:0},p);});
+        if(d.settings)S=Object.assign({},DEFAULTS,d.settings);
+        savePositions(); saveSettings(); await loadAll(false); fillSettings(); renderAll(); toast('Portfolio imported');
+      }catch(e){toast('That file could not be read as portfolio JSON');}
+    };
+    r.readAsText(f);
+  };
+  inp.click();
+};
+$('#applyJson').onclick=async function(){
+  try{
+    const d=JSON.parse($('#jsonBox').value);
+    if(!Array.isArray(d))throw 0;
+    POS=d.map(function(p){return Object.assign({id:uid(),sells:[],fee:0},p);});
+    savePositions(); await loadAll(false); fillSettings(); renderAll(); toast('Portfolio replaced');
+  }catch(e){toast('That is not a valid array of positions');}
+};
+$('#wipeBtn').onclick=function(){
+  if(!confirm('Delete every position and reset settings? Export first if you want a copy.'))return;
+  POS=[]; S=Object.assign({},DEFAULTS); clearCache(); savePositions(); saveSettings(); fillSettings(); renderAll(); toast('Everything cleared');
+};
+$('#demoBtn').onclick=async function(){
+  const t=today();
+  POS=[
+    {id:uid(),symbol:'AAPL',name:'Apple Inc.',date:addMonths(t,-30),qty:40,price:0,fee:0,sells:[]},
+    {id:uid(),symbol:'MSFT',name:'Microsoft Corporation',date:addMonths(t,-22),qty:25,price:0,fee:0,sells:[]},
+    {id:uid(),symbol:'NVDA',name:'NVIDIA Corporation',date:addMonths(t,-14),qty:60,price:0,fee:0,sells:[]},
+    {id:uid(),symbol:'SAP',name:'SAP SE',date:addMonths(t,-9),qty:35,price:0,fee:0,sells:[]},
+    {id:uid(),symbol:'ASML',name:'ASML Holding N.V.',date:addMonths(t,-6),qty:8,price:0,fee:0,sells:[]},
+    {id:uid(),symbol:'KO',name:'The Coca-Cola Company',date:addMonths(t,-18),qty:120,price:0,fee:0,sells:[]},
+    {id:uid(),symbol:'TSLA',name:'Tesla, Inc.',date:addMonths(t,-20),qty:30,price:0,fee:0,sells:[{date:addMonths(t,-3),qty:15,price:0}]}
+  ];
+  await loadAll(false);
+  POS.forEach(function(p){                       // price the sample lots off the loaded history
+    const c=closeAt(p.symbol,p.date); p.price=c==null?100:+c.toFixed(2);
+    (p.sells||[]).forEach(function(s){const q=closeAt(p.symbol,s.date);s.price=q==null?p.price:+q.toFixed(2);});
+  });
+  savePositions(); fillSettings(); renderAll(); toast('Sample portfolio loaded');
+};
 
-            document.getElementById('totalPortfolioValue').innerText = `€${totalValue.toFixed(2)}`;
-            const plElement = document.getElementById('totalPortfolioPL');
-            plElement.innerText = `${sign}€${totalPL.toFixed(2)}`;
-            plElement.style.color = color;
-        }
-    </script>
+/* ---------- boot ---------- */
+(async function init(){
+  buildRanges(); fillSettings();
+  renderAll();
+  await loadAll(false);
+  renderAll();
+  window.addEventListener('resize',function(){
+    clearTimeout(window._rz);
+    window._rz=setTimeout(function(){renderMainChart(buildTimeline());drawHeatmap($('#heatWrap'));},180);
+  });
+})();
+</script>
 </body>
 </html>
