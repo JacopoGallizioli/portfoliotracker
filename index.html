@@ -96,7 +96,7 @@ main{padding:18px;max-width:1560px;margin:0 auto}
 .kpi{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:11px 13px}
 .kpi-k{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--bone-faint);font-family:"IBM Plex Sans Condensed";font-weight:600}
 .kpi-v{font-size:21px;margin-top:5px;letter-spacing:-.01em}
-.kpi-s{font-size:11px;color:var(--bone-dim);margin-top:2px;font-family:"IBM Plex Mono"}
+.kpi-s{font-size:11px;color:var(--bone-dim);margin-top:2px;font-family:"IBM Plex Mono";min-height:15px}
 .up{color:var(--up)} .down{color:var(--down)} .flat{color:var(--bone-dim)}
 
 /* ---------- chart ---------- */
@@ -327,11 +327,19 @@ input:focus,select:focus,textarea:focus{border-color:var(--gold);box-shadow:0 0 
           </div>
           <div class="row3">
             <div class="field"><label>Benchmark</label><input type="text" id="setBench"></div>
-            <div class="field"><label>Currency</label><input type="text" id="setCurrency"></div>
+            <div class="field"><label>Currency</label>
+              <select id="setCurrency">
+                <option value="EUR">EUR &euro;</option>
+                <option value="USD">USD $</option>
+                <option value="GBP">GBP &pound;</option>
+                <option value="CHF">CHF</option>
+              </select>
+            </div>
             <div class="field"><label>Sale proceeds</label>
               <select id="setCash"><option value="1">Keep as cash</option><option value="0">Withdraw</option></select>
             </div>
           </div>
+          <label class="chk" style="margin:2px 0 14px"><input type="checkbox" id="setFx"> Convert foreign prices at the ECB daily rate</label>
           <button class="btn primary" id="saveSettings">Save settings</button>
         </div>
       </div>
@@ -445,8 +453,11 @@ const store=(()=>{
 
 /* ---------- state ---------- */
 const DEFAULTS={provider:'demo',quoteProvider:'none',proxy:'',avKey:'',tdKey:'',fhKey:'',
-  benchmark:'',currency:'USD',cashMode:1,cacheHours:12,heatScale:3,autoMin:0,urlSync:1};
+  benchmark:'',currency:'EUR',fxConvert:1,cashMode:1,cacheHours:12,heatScale:3,autoMin:0,urlSync:1,v:2};
 let S=Object.assign({},DEFAULTS,store.get('lg_settings',{}));
+/* settings saved before the euro switch still carry currency:USD, and stored
+   values win over defaults, so bump them once */
+if((S.v|0)<2){S.currency='EUR';S.fxConvert=1;S.v=2;store.set('lg_settings',S);}
 let POS=store.get('lg_positions',[]);
 let RANGE=store.get('lg_range','1Y');
 let CHART_MODE='money', HEAT_MODE='day';
@@ -529,16 +540,53 @@ const cls=v=>v==null||!isFinite(v)||Math.abs(v)<1e-9?'flat':(v>0?'up':'down');
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('on');clearTimeout(t._h);t._h=setTimeout(function(){t.classList.remove('on');},2600);}
 
-/* forward-filled close: last close on or before `date` */
-function closeAt(sym,date){
-  const s=PX[sym]; if(!s||!s.dates.length)return null;
-  const D=s.dates; if(date<D[0])return null;
+/* ============================================================
+   FX
+   Prices arrive in whatever currency the exchange quotes in. Everything
+   on screen is shown in one currency, converted at the ECB reference
+   rate for that day, so a chart of a US holding in EUR moves with both
+   the share price and the euro.
+   ============================================================ */
+const FX={};            // "USD>EUR" -> {dates:[],rates:[]}
+let FX_MISSING=null;    // set when a needed pair could not be loaded
+const dispCur=()=>(S.currency||'EUR').toUpperCase();
+const nativeCur=sym=>{const s=PX[sym];return (s&&s.cur)?s.cur.toUpperCase():dispCur();};
+
+function fxAt(from,to,date){
+  if(!from||!to||from===to)return 1;
+  if(!(+S.fxConvert))return 1;
+  const f=FX[from+'>'+to];
+  if(!f||!f.dates.length){FX_MISSING=from+'/'+to;return 1;}
+  const D=f.dates;
   let lo=0,hi=D.length-1,r=-1;
   while(lo<=hi){const m=(lo+hi)>>1; if(D[m]<=date){r=m;lo=m+1;}else hi=m-1;}
-  return r<0?null:s.closes[r];
+  return r<0?f.rates[0]:f.rates[r];   // before the series starts: use the oldest rate
 }
-const lastClose=sym=>{const s=PX[sym];return s&&s.closes.length?s.closes[s.closes.length-1]:null;};
-const prevClose=sym=>{const s=PX[sym];return s&&s.closes.length>1?s.closes[s.closes.length-2]:null;};
+/* index of the last bar on or before `date` */
+function barAt(s,date){
+  const D=s.dates;
+  if(date<D[0])return -1;
+  let lo=0,hi=D.length-1,r=-1;
+  while(lo<=hi){const m=(lo+hi)>>1; if(D[m]<=date){r=m;lo=m+1;}else hi=m-1;}
+  return r;
+}
+/* forward-filled close on or before `date`, in the display currency */
+function closeAt(sym,date){
+  const s=PX[sym]; if(!s||!s.dates.length)return null;
+  const i=barAt(s,date);
+  if(i<0)return null;
+  return s.closes[i]*fxAt(nativeCur(sym),dispCur(),s.dates[i]);
+}
+const lastClose=sym=>{
+  const s=PX[sym]; if(!s||!s.closes.length)return null;
+  const i=s.closes.length-1;
+  return s.closes[i]*fxAt(nativeCur(sym),dispCur(),s.dates[i]);
+};
+const prevClose=sym=>{
+  const s=PX[sym]; if(!s||s.closes.length<2)return null;
+  const i=s.closes.length-2;
+  return s.closes[i]*fxAt(nativeCur(sym),dispCur(),s.dates[i]);
+};
 const lastDate=sym=>{const s=PX[sym];return s&&s.dates.length?s.dates[s.dates.length-1]:null;};
 
 /* ============================================================
@@ -610,7 +658,7 @@ function demoSeries(sym){
     price*=Math.exp(drift-0.5*vol*vol+vol*g);
     dates.push(iso(d)); closes.push(+price.toFixed(2));
   }
-  return{dates:dates,closes:closes};
+  return{dates:dates,closes:closes,cur:'USD'};
 }
 const DEMO_UNIVERSE=[
  ['AAPL','Apple Inc.','US0378331005'],['MSFT','Microsoft Corporation','US5949181045'],
@@ -653,7 +701,8 @@ const Providers={
   },
 
   twelvedata:{
-    label:'Twelve Data', bench:'SPX', needs:'key', perMin:8,
+    /* indices such as SPX are not on the free plan, so the S&P 500 ETF stands in */
+    label:'Twelve Data', bench:'SPY', needs:'key', perMin:8,
     keyLabel:'Twelve Data API key', signup:'https://twelvedata.com/pricing',
     hint:'Free plan: 800 calls a day, 8 a minute, real-time for US markets. Sends CORS headers, so no proxy is needed. Coverage of non-US exchanges and some ETFs is limited on the free plan — use the "EXCHANGE:SYMBOL" form for foreign listings, e.g. XETR:SAP.',
     async search(q){
@@ -674,7 +723,7 @@ const Providers={
         dates.push(v.datetime.slice(0,10)); closes.push(c);
       });
       if(dates.length>1&&dates[0]>dates[dates.length-1]){dates.reverse();closes.reverse();}
-      return{dates:dates,closes:closes};
+      return{dates:dates,closes:closes,cur:(d.meta&&d.meta.currency)||'USD'};
     }
   },
 
@@ -700,7 +749,7 @@ const Providers={
         if(c==null)continue;
         dates.push(new Date(ts[i]*1000).toISOString().slice(0,10)); closes.push(c);
       }
-      return{dates:dates,closes:closes};
+      return{dates:dates,closes:closes,cur:(r.meta&&r.meta.currency)||'USD'};
     },
     async quote(syms){
       const d=await getJSON('https://query1.finance.yahoo.com/v7/finance/quote?symbols='+encodeURIComponent(syms.join(',')));
@@ -733,7 +782,9 @@ const Providers={
         if(!p[0]||!isFinite(c))continue;
         dates.push(p[0]); closes.push(c);
       }
-      return{dates:dates,closes:closes};
+      const suf=(sym.split('.')[1]||'us').toLowerCase();
+      const cur={us:'USD',de:'EUR',fr:'EUR',nl:'EUR',es:'EUR',it:'EUR',uk:'GBP',ch:'CHF',jp:'JPY'}[suf]||'USD';
+      return{dates:dates,closes:closes,cur:cur};
     }
   },
 
@@ -755,7 +806,7 @@ const Providers={
       const t=d['Time Series (Daily)'];
       if(!t)throw new Error(d.Note||d.Information||d['Error Message']||'no data');
       const dates=Object.keys(t).sort(), closes=dates.map(function(k){return parseFloat(t[k]['4. close']);});
-      return{dates:dates,closes:closes};
+      return{dates:dates,closes:closes,cur:'USD'};
     }
   }
 };
@@ -843,12 +894,57 @@ async function searchInstruments(q){
   return prov().search(q);
 }
 
+/* ---------- ECB rates via Frankfurter: no key, no quota ---------- */
+async function loadFXPair(from,to,since){
+  const key=from+'>'+to, ck='lg_fx_'+key;
+  if(FX[key])return FX[key];
+  const cached=store.get(ck,null);
+  if(cached&&cached.t&&(Date.now()-cached.t)<12*3600*1000&&cached.d&&cached.d.dates.length){
+    FX[key]=cached.d; return FX[key];
+  }
+  const path=encodeURIComponent(since)+'..?from='+encodeURIComponent(from)+'&to='+encodeURIComponent(to);
+  let d=null;
+  try{ d=await getJSON('https://api.frankfurter.dev/v1/'+path,true); }
+  catch(e){
+    try{ d=await getJSON('https://api.frankfurter.app/'+path,true); }
+    catch(e2){
+      if(cached&&cached.d){FX[key]=cached.d;return FX[key];}
+      FX_MISSING=from+'/'+to; return null;
+    }
+  }
+  const rates=(d&&d.rates)||{};
+  const dates=Object.keys(rates).sort(), vals=[];
+  dates.forEach(function(k){vals.push(rates[k][to]);});
+  if(!dates.length){FX_MISSING=from+'/'+to;return null;}
+  FX[key]={dates:dates,rates:vals};
+  store.set(ck,{t:Date.now(),d:FX[key]});
+  return FX[key];
+}
+async function loadFX(){
+  FX_MISSING=null;
+  if(!(+S.fxConvert))return;
+  const to=dispCur();
+  let since=today();
+  POS.forEach(function(p){if(p.date<since)since=p.date;});
+  since=addDays(since,-10);
+  const need={};
+  symbolList().forEach(function(sym){
+    const c=nativeCur(sym);
+    if(c&&c!==to)need[c]=1;
+  });
+  await Promise.all(Object.keys(need).map(function(c){return loadFXPair(c,to,since);}));
+}
+
 /* ---------- history cache ---------- */
 const cacheKey=sym=>'lg_px_'+S.provider+'_'+sym;
 async function loadSeries(sym,force){
   if(!sym)return null;
   if(!force&&PX[sym])return PX[sym];
   if(S.provider==='demo'){PX[sym]=demoSeries(sym);return PX[sym];}
+  if(prov().needs==='proxy'&&!(S.proxy||'').trim()){
+    FAILED[sym]='this source needs a CORS proxy and none is set';
+    return null;
+  }
   if(!force){
     const c=store.get(cacheKey(sym),null);
     if(c&&c.t&&(Date.now()-c.t)<(S.cacheHours*3600*1000)&&c.d&&c.d.dates.length){PX[sym]=c.d;return PX[sym];}
@@ -903,6 +999,8 @@ function mergeQuote(sym,q){
 async function refreshQuotes(){
   const src=quoteSrc();
   if(!src.quote)return{ok:0,err:null};
+  if(src.needs==='proxy'&&!(S.proxy||'').trim())
+    return{ok:0,err:'this source needs a CORS proxy and none is set'};
   const syms=symbolList();
   if(!syms.length)return{ok:0,err:null};
   try{
@@ -967,10 +1065,10 @@ function unionDates(){
   const b=PX[benchSym()]; if(b)b.dates.forEach(function(d){set[d]=1;});
   return Object.keys(set).sort();
 }
-function rangeStart(all){
+function rangeStart(all,range){
   if(!all.length)return null;
   const end=all[all.length-1];
-  switch(RANGE){
+  switch(range||RANGE){
     case'1M':return addMonths(end,-1);
     case'3M':return addMonths(end,-3);
     case'6M':return addMonths(end,-6);
@@ -989,7 +1087,7 @@ function rangeStart(all){
             Each purchase only starts contributing on its own buy date,
             which is exactly the "continuous from when it was added" behaviour.
    ============================================================ */
-function buildTimeline(){
+function buildTimeline(rangeOverride){
   const all=unionDates();
   if(!all.length)return null;
 
@@ -997,7 +1095,7 @@ function buildTimeline(){
   let firstEvent=null;
   POS.forEach(function(p){ if(!firstEvent||p.date<firstEvent)firstEvent=p.date; });
 
-  const from=rangeStart(all), to=all[all.length-1];
+  const from=rangeStart(all,rangeOverride), to=all[all.length-1];
   const dates=all.filter(function(d){return d>=from&&d<=to&&(!firstEvent||d>=firstEvent||POS.length===0);});
   if(!dates.length)return null;
 
@@ -1054,7 +1152,7 @@ function buildTimeline(){
 }
 
 /* headline numbers */
-function summary(tl){
+function summary(tl,tlAll){
   let value=0,cost=0,dayPL=0,real=0,fees=0,investedAll=0,dayBase=0;
   POS.forEach(function(p){
     const s=snapshot(p);
@@ -1072,6 +1170,7 @@ function summary(tl){
     plPct:investedAll>0?total/investedAll*100:null,
     dayPL:dayPL, dayPct:dayBase>0?dayPL/dayBase*100:null,
     twr:tl?tl.twr[tl.twr.length-1]:null,
+    twrAll:tlAll&&tlAll.twr.length?tlAll.twr[tlAll.twr.length-1]:null,
     bench:tl&&tl.bench.length?tl.bench[tl.bench.length-1]:null
   };
 }
@@ -1263,15 +1362,13 @@ function kpiCard(k,v,sub,klass){
   return'<div class="kpi"><div class="kpi-k">'+k+'</div><div class="kpi-v '+(klass||'')+'">'+v+'</div><div class="kpi-s">'+(sub||'')+'</div></div>';
 }
 function renderKPIs(tl,sm){
-  const alpha=(sm.twr!=null&&sm.bench!=null)?sm.twr-sm.bench:null;
   $('#kpis').innerHTML=
-    kpiCard('Portfolio value',fmtMoney(sm.total),(+S.cashMode&&sm.cash>0?'incl. '+fmtMoney(sm.cash)+' cash':fmtMoney(sm.cost)+' at cost'))+
+    kpiCard('Portfolio value',fmtMoney(sm.total),(+S.cashMode&&sm.cash>0)?('incl. '+fmtMoney(sm.cash,0)+' cash'):'')+
     kpiCard('Today',fmtMoney(sm.dayPL),fmtPct(sm.dayPct),cls(sm.dayPL))+
-    kpiCard('Total profit',fmtMoney(sm.pl),fmtPct(sm.plPct)+' on '+fmtMoney(sm.invested)+' invested',cls(sm.pl))+
-    kpiCard('Return, '+RANGE,fmtPct(sm.twr),'time weighted',cls(sm.twr))+
-    kpiCard(esc(benchSym())+', '+RANGE,fmtPct(sm.bench),'benchmark',cls(sm.bench))+
-    kpiCard('Vs benchmark',fmtPct(alpha),alpha==null?'—':(alpha>=0?'ahead':'behind'),cls(alpha))+
-    kpiCard('Realised',fmtMoney(sm.real),sm.fees?'after '+fmtMoney(sm.fees)+' fees':'from closed lots',cls(sm.real));
+    kpiCard('Total profit',fmtMoney(sm.pl),fmtPct(sm.plPct),cls(sm.pl))+
+    kpiCard('Compounded return',fmtPct(sm.twrAll),'',cls(sm.twrAll))+
+    kpiCard('Return, '+RANGE,fmtPct(sm.twr),'',cls(sm.twr))+
+    kpiCard('Realised',fmtMoney(sm.real),'',cls(sm.real));
 }
 function renderMainChart(tl){
   const host=$('#mainChart');
@@ -1390,7 +1487,7 @@ function renderHoldings(){
 }
 function renderAll(){
   const tl=buildTimeline();
-  const sm=summary(tl);
+  const sm=summary(tl,buildTimeline('MAX'));
   renderKPIs(tl,sm); renderMainChart(tl); renderMovers(); renderAlloc(); renderHoldings();
   drawHeatmap($('#heatWrap')); renderAlert(); renderDiag();
   $('#srcLabel').textContent=prov().label.toLowerCase()+(quoteSrc().quote?(' + '+quoteSrc().label.toLowerCase()):'');
@@ -1436,7 +1533,7 @@ function setStatus(txt,klass){
 }
 function liveLabel(res){
   if(!quoteSrc().quote){setStatus('daily closes');return;}
-  if(res&&res.err){setStatus('quotes failed \u00b7 '+res.err,'warnText');return;}
+  if(res&&res.err){setStatus(quoteSrc().label.toLowerCase()+' quotes failed \u00b7 '+res.err,'warnText');return;}
   if(LIVE_AT){
     setStatus('live '+new Date(LIVE_AT).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'}),'live');
     return;
@@ -1446,6 +1543,7 @@ function liveLabel(res){
 async function loadPrices(force){
   setStatus('loading history\u2026');
   await loadAll(force,function(done,total){ if(total>1)setStatus('history '+done+'/'+total+'\u2026'); });
+  if(+S.fxConvert){setStatus('loading exchange rates\u2026'); await loadFX();}
   renderAll();
   let res=null;
   if(quoteSrc().quote){
@@ -1593,6 +1691,7 @@ function fillSettings(){
   $('#setTdKey').value=S.tdKey||''; $('#setFhKey').value=S.fhKey||'';
   $('#setBench').value=S.benchmark||''; $('#setCache').value=S.cacheHours;
   $('#setCurrency').value=S.currency; $('#setCash').value=String(+S.cashMode||0);
+  $('#setFx').checked=!!(+S.fxConvert);
   $('#setAuto').value=String(+S.autoMin||0); $('#heatScale').value=S.heatScale;
   syncSettingFields(); renderDiag();
 }
@@ -1607,7 +1706,10 @@ $('#saveSettings').onclick=async function(){
   S.fhKey=$('#setFhKey').value.trim();
   S.benchmark=$('#setBench').value.trim();
   S.cacheHours=Math.max(0,+$('#setCache').value||0);
-  S.currency=($('#setCurrency').value.trim()||'USD').toUpperCase();
+  const curWas=S.currency;
+  S.currency=($('#setCurrency').value.trim()||'EUR').toUpperCase();
+  S.fxConvert=$('#setFx').checked?1:0;
+  if(curWas!==S.currency)Object.keys(FX).forEach(function(k){delete FX[k];});
   S.cashMode=+$('#setCash').value;
   S.autoMin=+$('#setAuto').value||0;
   saveSettings();
@@ -1628,7 +1730,10 @@ function renderDiag(){
     const px=PX[sym], bad=FAILED[sym];
     let right,color;
     if(bad){right=esc(bad);color='var(--down)';}
-    else if(px&&px.dates.length){right=px.dates.length+' bars, to '+px.dates[px.dates.length-1];color='var(--up)';}
+    else if(px&&px.dates.length){
+      const c=nativeCur(sym);
+      right=px.dates.length+' bars, to '+px.dates[px.dates.length-1]+(c!==dispCur()?(' \u00b7 '+c+'\u2192'+dispCur()):' \u00b7 '+c);
+      color='var(--up)';}
     else{right='no data';color='var(--bone-faint)';}
     return'<div><span class="sym">'+esc(sym)+'</span><i style="color:'+color+'">'+right+'</i></div>';
   }).join('');
@@ -1672,6 +1777,10 @@ $('#testBtn').onclick=async function(){
 function renderAlert(){
   const el=$('#alert');
   const bad=Object.keys(FAILED);
+  if(!bad.length&&FX_MISSING){
+    el.innerHTML='<b>Exchange rates unavailable</b>The '+esc(FX_MISSING)+' rate could not be loaded, so foreign holdings are shown at their quoted price without conversion. Values for those positions are not in '+esc(dispCur())+'.';
+    el.className='banner on'; return;
+  }
   if(!bad.length){el.className='banner';el.innerHTML='';return;}
   const blocked=bad.filter(function(k){return FAILED[k]===BLOCKED_MSG;}).length;
   let body;
