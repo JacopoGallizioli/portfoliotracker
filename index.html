@@ -332,8 +332,8 @@ input:focus,select:focus,textarea:focus{border-color:var(--gold);box-shadow:0 0 
             <label>Dividends</label>
             <select id="setDiv">
               <option value="none">Manual entry only</option>
-              <option value="twelvedata">Twelve Data</option>
-              <option value="yahoo">Yahoo (proxy)</option>
+              <option value="twelvedata">Twelve Data (paid plans only)</option>
+              <option value="yahoo">Yahoo (proxy) &mdash; recommended</option>
             </select>
           </div>
           <div class="field" id="proxyField">
@@ -490,7 +490,7 @@ const store=(()=>{
 })();
 
 /* ---------- state ---------- */
-const BUILD='2026-08-01f';
+const BUILD='2026-08-01g';
 const DEFAULTS={provider:'demo',quoteProvider:'none',proxy:'',avKey:'',tdKey:'',fhKey:'',
   benchmark:'',currency:'EUR',fxConvert:1,cashMode:1,cacheHours:12,heatScale:3,autoMin:0,urlSync:1,
   divProvider:'none',v:2};
@@ -663,7 +663,7 @@ async function fx(url,opts){
 async function getJSON(url,noProxy){
   const r=await fx(noProxy?url:withProxy(url),{headers:{'Accept':'application/json'}});
   if(r.status===429)throw new Error('rate limit reached, wait a minute');
-  if(r.status===401||r.status===403)throw new Error('key rejected, or not on the free plan');
+  if(r.status===401||r.status===403)throw new Error('rejected: either the key is wrong or this endpoint is not included in your plan');
   if(r.status===404)throw new Error('not found on this source (wrong symbol format, or a market the plan does not cover)');
   if(!r.ok)throw new Error('HTTP '+r.status);
   try{return await r.json();}catch(e){throw new Error('response was not JSON (a proxy error page?)');}
@@ -1108,6 +1108,7 @@ const DivSources={
   yahoo:{
     label:'Yahoo Finance', needs:'proxy',
     async fetchDiv(sym){
+      if(!(S.proxy||'').trim())throw new Error('needs a CORS proxy and none is set');
       const d=await getJSON('https://query1.finance.yahoo.com/v8/finance/chart/'+encodeURIComponent(sym)+'?range=10y&interval=1d&events=div');
       const r=d.chart&&d.chart.result&&d.chart.result[0];
       if(!r)throw new Error('no data');
@@ -1134,8 +1135,11 @@ async function loadDivs(force){
       let list=null;
       try{ list=await divSrc().fetchDiv(sym); }
       catch(e1){
-        if(S.divProvider!=='twelvedata'&&S.tdKey){ list=await DivSources.twelvedata.fetchDiv(sym); }
-        else throw e1;
+        // a fallback attempt must never replace the primary error message
+        if(S.divProvider!=='twelvedata'&&S.tdKey){
+          try{ list=await DivSources.twelvedata.fetchDiv(sym); }
+          catch(e2){ throw new Error(divSrc().label+': '+friendly(e1)+' | Twelve Data: '+friendly(e2)); }
+        }else throw e1;
       }
       list.sort(function(a,b){return a.date<b.date?-1:1;});
       DIV[sym]=list; delete DIV_FAILED[sym];
