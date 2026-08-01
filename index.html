@@ -191,6 +191,7 @@ input:focus,select:focus,textarea:focus{border-color:var(--gold);box-shadow:0 0 
     <nav>
       <button data-view="dash" class="on">Dashboard</button>
       <button data-view="holdings">Holdings</button>
+      <button data-view="divs">Dividends</button>
       <button data-view="heat">Heatmap</button>
       <button data-view="settings">Settings</button>
     </nav>
@@ -246,6 +247,23 @@ input:focus,select:focus,textarea:focus{border-color:var(--gold);box-shadow:0 0 
         <label class="chk" style="margin-left:auto"><input type="checkbox" id="showClosed"> Show closed lots</label>
       </div>
       <div class="scroll"><table id="holdTable"></table></div>
+    </div>
+  </section>
+
+  <!-- ============ DIVIDENDS ============ -->
+  <section class="view" id="view-divs">
+    <div class="kpis" id="divKpis"></div>
+    <div class="panel">
+      <div class="panel-h"><h2>By position</h2>
+        <span class="tag" id="divNote" style="margin-left:auto"></span>
+      </div>
+      <div class="scroll"><table id="divBySym"></table></div>
+    </div>
+    <div class="panel" style="margin-top:14px">
+      <div class="panel-h"><h2>Dividend history</h2>
+        <button class="btn sm" id="addDivBtn" style="margin-left:auto">+ Add payment</button>
+      </div>
+      <div class="scroll"><table id="divHist"></table></div>
     </div>
   </section>
 
@@ -309,10 +327,18 @@ input:focus,select:focus,textarea:focus{border-color:var(--gold);box-shadow:0 0 
             <label>Finnhub key &nbsp;<a href="https://finnhub.io/register" target="_blank" rel="noopener">get one</a></label>
             <input type="text" id="setFhKey" autocomplete="off">
           </div>
+          <div class="field">
+            <label>Dividends</label>
+            <select id="setDiv">
+              <option value="none">Manual entry only</option>
+              <option value="twelvedata">Twelve Data</option>
+              <option value="yahoo">Yahoo (proxy)</option>
+            </select>
+          </div>
           <div class="field" id="proxyField">
             <label>CORS proxy</label>
             <input type="text" id="setProxy" placeholder="https://api.allorigins.win/raw?url={url}">
-            <div class="hint">Put <code>{url}</code> where the target URL goes.</div>
+            <div class="hint">Put <code>{url}</code> where the target URL goes. <a href="#" id="fillProxy">Use allOrigins</a></div>
           </div>
           <div class="row2">
             <div class="field"><label>Auto refresh</label>
@@ -325,21 +351,13 @@ input:focus,select:focus,textarea:focus{border-color:var(--gold);box-shadow:0 0 
             </div>
             <div class="field"><label>Cache history (h)</label><input type="number" id="setCache" min="0" step="1"></div>
           </div>
-          <div class="row3">
+          <div class="row2">
             <div class="field"><label>Benchmark</label><input type="text" id="setBench"></div>
-            <div class="field"><label>Currency</label>
-              <select id="setCurrency">
-                <option value="EUR">EUR &euro;</option>
-                <option value="USD">USD $</option>
-                <option value="GBP">GBP &pound;</option>
-                <option value="CHF">CHF</option>
-              </select>
-            </div>
+
             <div class="field"><label>Sale proceeds</label>
               <select id="setCash"><option value="1">Keep as cash</option><option value="0">Withdraw</option></select>
             </div>
           </div>
-          <label class="chk" style="margin:2px 0 14px"><input type="checkbox" id="setFx"> Convert foreign prices at the ECB daily rate</label>
           <button class="btn primary" id="saveSettings">Save settings</button>
         </div>
       </div>
@@ -350,6 +368,7 @@ input:focus,select:focus,textarea:focus{border-color:var(--gold);box-shadow:0 0 
         </div>
         <div class="panel-b">
           <div id="testOut" class="hint" style="margin-bottom:12px">Checks whether this browser can actually reach your sources.</div>
+          <div class="hint" style="margin-bottom:12px">Build <b id="buildTag"></b> &middot; showing <b id="curTag"></b></div>
           <div class="diag" id="diagList"></div>
         </div>
       </div>
@@ -365,7 +384,8 @@ input:focus,select:focus,textarea:focus{border-color:var(--gold);box-shadow:0 0 
       <div class="field">
         <label>Find an instrument</label>
         <input type="text" id="searchInput" placeholder="Ticker, ISIN or company name" autocomplete="off">
-        <div class="hint" id="searchHint">Type at least two characters. ISIN lookup works on the Yahoo source.</div>
+        <div class="hint" id="searchHint"></div>
+        <div class="hint" id="searchHint2"></div>
         <div class="results" id="searchResults" style="display:none"></div>
       </div>
       <div id="pickedBox" style="display:none">
@@ -413,6 +433,23 @@ input:focus,select:focus,textarea:focus{border-color:var(--gold);box-shadow:0 0 
   </div>
 </div>
 
+<!-- ============ DIVIDEND MODAL ============ -->
+<div class="modal" id="divModal">
+  <div class="sheet" style="max-width:440px">
+    <div class="sheet-h"><h3>Add dividend</h3><button class="btn ghost sm" data-close>Close</button></div>
+    <div class="sheet-b">
+      <div class="row3">
+        <div class="field"><label>Symbol</label><input type="text" id="dvSym" autocomplete="off"></div>
+        <div class="field"><label>Pay date</label><input type="date" id="dvDate"></div>
+        <div class="field"><label>Gross amount</label><input type="number" id="dvTotal" step="any" min="0"></div>
+      </div>
+      <div class="hint">Total received before tax, in your display currency.</div>
+      <div class="err" id="dvErr"></div>
+      <button class="btn primary" id="saveDiv" style="width:100%;margin-top:8px">Add payment</button>
+    </div>
+  </div>
+</div>
+
 <!-- ============ SELL MODAL ============ -->
 <div class="modal" id="sellModal">
   <div class="sheet" style="max-width:440px">
@@ -452,12 +489,17 @@ const store=(()=>{
 })();
 
 /* ---------- state ---------- */
+const BUILD='2026-08-01e';
 const DEFAULTS={provider:'demo',quoteProvider:'none',proxy:'',avKey:'',tdKey:'',fhKey:'',
-  benchmark:'',currency:'EUR',fxConvert:1,cashMode:1,cacheHours:12,heatScale:3,autoMin:0,urlSync:1,v:2};
+  benchmark:'',currency:'EUR',fxConvert:1,cashMode:1,cacheHours:12,heatScale:3,autoMin:0,urlSync:1,
+  divProvider:'none',v:2};
 let S=Object.assign({},DEFAULTS,store.get('lg_settings',{}));
 /* settings saved before the euro switch still carry currency:USD, and stored
    values win over defaults, so bump them once */
-if((S.v|0)<2){S.currency='EUR';S.fxConvert=1;S.v=2;store.set('lg_settings',S);}
+/* euro is not negotiable: forced on every load so no stored value,
+   stale cache or old deploy can put dollars back on screen */
+S.currency='EUR'; S.fxConvert=1;
+if((S.v|0)<3){S.v=3;store.set('lg_settings',S);}
 let POS=store.get('lg_positions',[]);
 let RANGE=store.get('lg_range','1Y');
 let CHART_MODE='money', HEAT_MODE='day';
@@ -621,6 +663,7 @@ async function getJSON(url,noProxy){
   const r=await fx(noProxy?url:withProxy(url),{headers:{'Accept':'application/json'}});
   if(r.status===429)throw new Error('rate limit reached, wait a minute');
   if(r.status===401||r.status===403)throw new Error('key rejected, or not on the free plan');
+  if(r.status===404)throw new Error('not found on this source (wrong symbol format, or a market the plan does not cover)');
   if(!r.ok)throw new Error('HTTP '+r.status);
   try{return await r.json();}catch(e){throw new Error('response was not JSON (a proxy error page?)');}
 }
@@ -950,8 +993,23 @@ async function loadSeries(sym,force){
     if(c&&c.t&&(Date.now()-c.t)<(S.cacheHours*3600*1000)&&c.d&&c.d.dates.length){PX[sym]=c.d;return PX[sym];}
   }
   try{
-    const d=await prov().series(sym);
-    if(!d.dates.length)throw new Error('empty series');
+    let d=null,firstErr=null;
+    try{
+      d=await prov().series(sym);
+      if(!d.dates.length)throw new Error('empty series');
+    }catch(e1){
+      firstErr=e1;
+      // European listings are routinely missing from the US-centric free plans.
+      // If a proxy is configured, Yahoo covers them, so try it before giving up.
+      if(S.provider!=='yahoo'&&(S.proxy||'').trim()){
+        try{
+          d=await Providers.yahoo.series(sym);
+          if(d.dates.length)d.via='yahoo';
+          else d=null;
+        }catch(e2){d=null;}
+      }
+      if(!d)throw firstErr;
+    }
     PX[sym]=d; delete FAILED[sym];
     store.set(cacheKey(sym),{t:Date.now(),d:d});
     return d;
@@ -1020,6 +1078,122 @@ function startAutoRefresh(){
     const r=await refreshQuotes();
     if(r.ok)renderAll();
   },mins*60000);
+}
+
+
+/* ============================================================
+   DIVIDENDS
+   DIV[sym] = [{date, amount}]  gross per share, native currency
+   MDIV     = manual entries, gross total already in display currency
+   ============================================================ */
+const DIV={}, DIV_FAILED={};
+let MDIV=store.get('lg_mdiv',[]);
+const saveMdiv=()=>{store.set('lg_mdiv',MDIV);markSaved();writeHash();};
+
+const DivSources={
+  none:{label:'Off, manual entries only'},
+  twelvedata:{
+    label:'Twelve Data', needs:'tdKey',
+    async fetchDiv(sym){
+      if(!S.tdKey)throw new Error('add your Twelve Data key');
+      const d=await paced('td',8,function(){
+        return getJSON('https://api.twelvedata.com/dividends?symbol='+encodeURIComponent(sym)+'&range=full&apikey='+S.tdKey,true);});
+      if(d.status==='error')throw new Error(d.message||'no dividend data');
+      return((d&&d.dividends)||[]).map(function(x){
+        return{date:(x.ex_date||x.payment_date||'').slice(0,10),amount:parseFloat(x.amount)};
+      }).filter(function(x){return x.date&&isFinite(x.amount)&&x.amount>0;});
+    }
+  },
+  yahoo:{
+    label:'Yahoo Finance', needs:'proxy',
+    async fetchDiv(sym){
+      const d=await getJSON('https://query1.finance.yahoo.com/v8/finance/chart/'+encodeURIComponent(sym)+'?range=10y&interval=1d&events=div');
+      const r=d.chart&&d.chart.result&&d.chart.result[0];
+      if(!r)throw new Error('no data');
+      const ev=(r.events&&r.events.dividends)||{};
+      return Object.keys(ev).map(function(k){
+        return{date:new Date((ev[k].date||+k)*1000).toISOString().slice(0,10),amount:+ev[k].amount};
+      }).filter(function(x){return isFinite(x.amount)&&x.amount>0;});
+    }
+  }
+};
+const divSrc=()=>DivSources[S.divProvider]||DivSources.none;
+
+async function loadDivs(force){
+  if(!divSrc().fetchDiv)return;
+  const syms=Object.keys(POS.reduce(function(a,p){a[p.symbol]=1;return a;},{}));
+  await Promise.all(syms.map(async function(sym){
+    const ck='lg_div_'+S.divProvider+'_'+sym;
+    if(!force&&DIV[sym])return;
+    if(!force){
+      const c=store.get(ck,null);
+      if(c&&c.t&&(Date.now()-c.t)<7*24*3600*1000&&c.d){DIV[sym]=c.d;return;}
+    }
+    try{
+      const list=await divSrc().fetchDiv(sym);
+      list.sort(function(a,b){return a.date<b.date?-1:1;});
+      DIV[sym]=list; delete DIV_FAILED[sym];
+      store.set(ck,{t:Date.now(),d:list});
+    }catch(e){
+      DIV_FAILED[sym]=friendly(e);
+      const c=store.get(ck,null);
+      if(c&&c.d)DIV[sym]=c.d;
+    }
+  }));
+}
+
+/* shares of a symbol held on a given date, across all lots */
+function sharesOn(sym,date){
+  let q=0;
+  POS.forEach(function(p){
+    if(p.symbol!==sym||p.date>date)return;
+    q+=openQty(p,date);
+  });
+  return q;
+}
+/* every dividend actually received, newest first */
+function dividendPayments(){
+  const out=[];
+  Object.keys(DIV).forEach(function(sym){
+    (DIV[sym]||[]).forEach(function(d){
+      const sh=sharesOn(sym,d.date);
+      if(sh<=1e-9)return;
+      const per=d.amount*fxAt(nativeCur(sym),dispCur(),d.date);
+      out.push({date:d.date,symbol:sym,perShare:per,shares:sh,gross:per*sh,manual:false});
+    });
+  });
+  MDIV.forEach(function(m){
+    out.push({id:m.id,date:m.date,symbol:m.symbol,perShare:null,shares:null,gross:+m.total||0,manual:true});
+  });
+  out.sort(function(a,b){return a.date<b.date?1:-1;});
+  return out;
+}
+function dividendTotals(){
+  const by={}; let total=0;
+  dividendPayments().forEach(function(p){
+    by[p.symbol]=(by[p.symbol]||0)+p.gross;
+    total+=p.gross;
+  });
+  return{by:by,total:total};
+}
+/* trailing twelve months per share, used for the yield */
+function ttmPerShare(sym){
+  const cut=addDays(today(),-365);
+  return (DIV[sym]||[]).reduce(function(a,d){
+    return a+(d.date>=cut?d.amount*fxAt(nativeCur(sym),dispCur(),d.date):0);},0);
+}
+/* value-weighted yield: total expected income over total market value */
+function portfolioYield(){
+  let income=0,value=0;
+  const seen={};
+  POS.forEach(function(p){
+    const q=openQty(p); if(q<=1e-9)return;
+    const px=lastClose(p.symbol); if(px==null)return;
+    value+=q*px;
+    income+=q*ttmPerShare(p.symbol);
+    seen[p.symbol]=1;
+  });
+  return value>0?{yield:income/value*100,income:income,value:value}:{yield:null,income:0,value:0};
 }
 
 /* ============================================================
@@ -1362,13 +1536,16 @@ function kpiCard(k,v,sub,klass){
   return'<div class="kpi"><div class="kpi-k">'+k+'</div><div class="kpi-v '+(klass||'')+'">'+v+'</div><div class="kpi-s">'+(sub||'')+'</div></div>';
 }
 function renderKPIs(tl,sm){
+  const divT=dividendTotals();
   $('#kpis').innerHTML=
     kpiCard('Portfolio value',fmtMoney(sm.total),(+S.cashMode&&sm.cash>0)?('incl. '+fmtMoney(sm.cash,0)+' cash'):'')+
     kpiCard('Today',fmtMoney(sm.dayPL),fmtPct(sm.dayPct),cls(sm.dayPL))+
-    kpiCard('Total profit',fmtMoney(sm.pl),fmtPct(sm.plPct),cls(sm.pl))+
+    kpiCard('Total profit',fmtMoney(sm.pl),fmtPct(sm.plPct)+' of '+fmtMoney(sm.invested,0),cls(sm.pl))+
     kpiCard('Compounded return',fmtPct(sm.twrAll),'',cls(sm.twrAll))+
     kpiCard('Return, '+RANGE,fmtPct(sm.twr),'',cls(sm.twr))+
-    kpiCard('Realised',fmtMoney(sm.real),'',cls(sm.real));
+    kpiCard('Realised, pre-tax',fmtMoney(sm.real),'',cls(sm.real))+
+    kpiCard('Dividends, pre-tax',fmtMoney(divT.total),'',divT.total>0?'up':'')+
+    kpiCard('Portfolio yield',fmtPct(portfolioYield().yield),'');
 }
 function renderMainChart(tl){
   const host=$('#mainChart');
@@ -1427,10 +1604,11 @@ function renderHoldings(){
   const t=$('#holdTable');
   if(!POS.length){t.innerHTML='<tbody><tr><td><div class="empty"><b>No positions</b>Use “Add position” to record your first buy.</div></td></tr></tbody>';return;}
   const showClosed=$('#showClosed').checked;
+  const divBy=dividendTotals().by;
   const groups={};
   POS.forEach(function(p){(groups[p.symbol]=groups[p.symbol]||[]).push(p);});
 
-  let html='<thead><tr><th>Symbol</th><th class="num">Qty</th><th class="num">Cost</th><th class="num">Price</th><th class="num">Value</th><th class="num">Weight</th><th class="num">Day</th><th class="num">Day P/L</th><th class="num">Total P/L</th><th class="num">Total %</th><th class="num">Realised</th><th></th></tr></thead><tbody>';
+  let html='<thead><tr><th>Symbol</th><th class="num">Qty</th><th class="num">Cost</th><th class="num">Price</th><th class="num">Value</th><th class="num">Weight</th><th class="num">Day</th><th class="num">Day P/L</th><th class="num">Total P/L</th><th class="num">Total %</th><th class="num">Dividends</th><th class="num">Realised</th><th></th></tr></thead><tbody>';
   let grand=0; POS.forEach(function(p){const s=snapshot(p);if(s.value!=null)grand+=s.value;});
 
   Object.keys(groups).sort().forEach(function(sym){
@@ -1460,6 +1638,7 @@ function renderHoldings(){
       '<td class="num '+cls(dayPL)+'">'+fmtMoney(dayPL)+'</td>'+
       '<td class="num '+cls(totalPL)+'">'+fmtMoney(totalPL)+'</td>'+
       '<td class="num '+cls(totalPL)+'">'+fmtPct(inv?totalPL/inv*100:null)+'</td>'+
+      '<td class="num '+(divBy[sym]?'up':'')+'">'+(divBy[sym]?fmtMoney(divBy[sym]):'—')+'</td>'+
       '<td class="num '+cls(real)+'">'+(real?fmtMoney(real):'—')+'</td><td></td></tr>';
 
     {
@@ -1476,6 +1655,7 @@ function renderHoldings(){
           '<td class="num '+cls(s.dayPL)+'">'+(s.dayPL==null?'—':fmtMoney(s.dayPL))+'</td>'+
           '<td class="num '+cls(s.totalPL)+'">'+fmtMoney(s.totalPL)+'</td>'+
           '<td class="num '+cls(s.totalPL)+'">'+fmtPct(linv?s.totalPL/linv*100:null)+'</td>'+
+          '<td class="num"></td>'+
           '<td class="num '+cls(s.real)+'">'+(s.real?fmtMoney(s.real):'—')+'</td>'+
           '<td class="num"><button class="btn ghost sm" data-edit="'+p.id+'">Edit</button> '+
           '<button class="btn ghost sm" data-sell="'+p.id+'">Sell</button> '+
@@ -1489,7 +1669,7 @@ function renderAll(){
   const tl=buildTimeline();
   const sm=summary(tl,buildTimeline('MAX'));
   renderKPIs(tl,sm); renderMainChart(tl); renderMovers(); renderAlloc(); renderHoldings();
-  drawHeatmap($('#heatWrap')); renderAlert(); renderDiag();
+  drawHeatmap($('#heatWrap')); renderDividends(); renderAlert(); renderDiag();
   $('#srcLabel').textContent=prov().label.toLowerCase()+(quoteSrc().quote?(' + '+quoteSrc().label.toLowerCase()):'');
   const anyFail=Object.keys(FAILED).length;
   $('#srcDot').className='dot'+(anyFail?' warn':'');
@@ -1544,6 +1724,7 @@ async function loadPrices(force){
   setStatus('loading history\u2026');
   await loadAll(force,function(done,total){ if(total>1)setStatus('history '+done+'/'+total+'\u2026'); });
   if(+S.fxConvert){setStatus('loading exchange rates\u2026'); await loadFX();}
+  if(divSrc().fetchDiv){setStatus('loading dividends\u2026'); await loadDivs(force);}
   renderAll();
   let res=null;
   if(quoteSrc().quote){
@@ -1583,7 +1764,8 @@ $('#addBtn').onclick=function(){
   $('#searchInput').value=''; $('#addErr').textContent='';
   $('#inDate').value=today(); $('#inQty').value=''; $('#inPrice').value=''; $('#inFee').value='0';
   const isinOK=(S.quoteProvider==='finnhub'&&S.fhKey)||S.provider==='yahoo'||(S.proxy||'').trim();
-  $('#searchHint').textContent=(S.provider==='stooq'
+  $('#searchHint').innerHTML='European listings need an exchange suffix: <code>SAP.DE</code> Xetra, <code>MC.PA</code> Paris, <code>ASML.AS</code> Amsterdam, <code>ENI.MI</code> Milan, <code>AZN.L</code> London, <code>NESN.SW</code> Swiss.';
+  $('#searchHint2').textContent=(S.provider==='stooq'
     ?'No search endpoint here — type the exact Stooq symbol, e.g. aapl.us or sap.de.'
     :'Ticker or company name.')+(isinOK?' ISINs are resolved automatically.':' ISIN lookup needs Finnhub or a Yahoo proxy.');
   $('#addModal').classList.add('on'); $('#searchInput').focus();
@@ -1679,7 +1861,7 @@ $('#saveSell').onclick=function(){
 /* ---------- settings ---------- */
 function syncSettingFields(){
   const hp=$('#setProvider').value, qp=$('#setQuote').value;
-  $('#proxyField').style.display=((Providers[hp]||{}).needs==='proxy'||qp==='yahoo')?'block':'none';
+  $('#proxyField').style.display=((Providers[hp]||{}).needs==='proxy'||qp==='yahoo'||$('#setDiv').value==='yahoo')?'block':'none';
   $('#tdField').style.display=(hp==='twelvedata'||qp==='twelvedata')?'block':'none';
   $('#avField').style.display=(hp==='alphavantage')?'block':'none';
   $('#fhField').style.display=(qp==='finnhub')?'block':'none';
@@ -1690,12 +1872,15 @@ function fillSettings(){
   $('#setProxy').value=S.proxy||''; $('#setKey').value=S.avKey||'';
   $('#setTdKey').value=S.tdKey||''; $('#setFhKey').value=S.fhKey||'';
   $('#setBench').value=S.benchmark||''; $('#setCache').value=S.cacheHours;
-  $('#setCurrency').value=S.currency; $('#setCash').value=String(+S.cashMode||0);
-  $('#setFx').checked=!!(+S.fxConvert);
+  $('#setCash').value=String(+S.cashMode||0);
+  $('#setDiv').value=S.divProvider||'none';
+  $('#buildTag').textContent=BUILD;
+  $('#curTag').textContent=dispCur();
   $('#setAuto').value=String(+S.autoMin||0); $('#heatScale').value=S.heatScale;
   syncSettingFields(); renderDiag();
 }
-$('#setProvider').onchange=$('#setQuote').onchange=syncSettingFields;
+$('#fillProxy').onclick=function(e){e.preventDefault();$('#setProxy').value='https://api.allorigins.win/raw?url={url}';};
+$('#setProvider').onchange=$('#setQuote').onchange=$('#setDiv').onchange=syncSettingFields;
 $('#saveSettings').onclick=async function(){
   const changed=S.provider!==$('#setProvider').value;
   S.provider=$('#setProvider').value;
@@ -1706,10 +1891,10 @@ $('#saveSettings').onclick=async function(){
   S.fhKey=$('#setFhKey').value.trim();
   S.benchmark=$('#setBench').value.trim();
   S.cacheHours=Math.max(0,+$('#setCache').value||0);
-  const curWas=S.currency;
-  S.currency=($('#setCurrency').value.trim()||'EUR').toUpperCase();
-  S.fxConvert=$('#setFx').checked?1:0;
-  if(curWas!==S.currency)Object.keys(FX).forEach(function(k){delete FX[k];});
+  S.currency='EUR'; S.fxConvert=1;
+  if(S.divProvider!==$('#setDiv').value)Object.keys(DIV).forEach(function(k){delete DIV[k];});
+  S.divProvider=$('#setDiv').value;
+
   S.cashMode=+$('#setCash').value;
   S.autoMin=+$('#setAuto').value||0;
   saveSettings();
@@ -1722,6 +1907,69 @@ $('#saveSettings').onclick=async function(){
   toast('Settings saved');
 };
 
+/* ---------- dividends view ---------- */
+function renderDividends(){
+  const t=dividendTotals(), y=portfolioYield(), pays=dividendPayments();
+  const ttm=pays.reduce(function(a,p){return a+(p.date>=addDays(today(),-365)?p.gross:0);},0);
+  $('#divKpis').innerHTML=
+    kpiCard('Dividends received',fmtMoney(t.total),'before tax')+
+    kpiCard('Last 12 months',fmtMoney(ttm),'')+
+    kpiCard('Portfolio yield',fmtPct(y.yield),'')+
+    kpiCard('Expected next year',fmtMoney(y.income),'');
+
+  const syms=Object.keys(t.by).sort();
+  $('#divBySym').innerHTML=syms.length
+    ?'<thead><tr><th>Symbol</th><th class="num">Received</th><th class="num">Last 12m</th><th class="num">Per share, 12m</th><th class="num">Yield</th><th class="num">Payments</th></tr></thead><tbody>'+
+      syms.map(function(sym){
+        const per=ttmPerShare(sym), px=lastClose(sym);
+        const n=pays.filter(function(p){return p.symbol===sym;}).length;
+        const t12=pays.reduce(function(a,p){return a+((p.symbol===sym&&p.date>=addDays(today(),-365))?p.gross:0);},0);
+        return'<tr><td><span class="sym">'+esc(sym)+'</span></td>'+
+          '<td class="num up">'+fmtMoney(t.by[sym])+'</td>'+
+          '<td class="num">'+fmtMoney(t12)+'</td>'+
+          '<td class="num">'+(per?fmtNum(per):'—')+'</td>'+
+          '<td class="num">'+((per&&px)?fmtPct(per/px*100):'—')+'</td>'+
+          '<td class="num">'+n+'</td></tr>';
+      }).join('')+'</tbody>'
+    :'<tbody><tr><td><div class="empty"><b>No dividends yet</b>Pick a source in Settings, or add a payment by hand.</div></td></tr></tbody>';
+
+  $('#divHist').innerHTML=pays.length
+    ?'<thead><tr><th>Date</th><th>Symbol</th><th class="num">Per share</th><th class="num">Shares</th><th class="num">Gross</th><th></th></tr></thead><tbody>'+
+      pays.map(function(p){
+        return'<tr><td class="mono">'+p.date+'</td><td><span class="sym">'+esc(p.symbol)+'</span></td>'+
+          '<td class="num">'+(p.perShare==null?'—':fmtNum(p.perShare,4))+'</td>'+
+          '<td class="num">'+(p.shares==null?'—':fmtNum(p.shares,p.shares%1?4:0))+'</td>'+
+          '<td class="num up">'+fmtMoney(p.gross)+'</td>'+
+          '<td class="num">'+(p.manual?'<button class="btn ghost sm danger" data-rmdiv="'+p.id+'">Remove</button>':'')+'</td></tr>';
+      }).join('')+'</tbody>'
+    :'<tbody><tr><td><div class="empty"><b>Nothing recorded</b>Payments appear here once a source is set or you add one.</div></td></tr></tbody>';
+
+  const bad=Object.keys(DIV_FAILED);
+  $('#divNote').textContent=divSrc().fetchDiv
+    ?(bad.length?('no data for '+bad.join(', ')):'source: '+divSrc().label.toLowerCase())
+    :'manual entries only';
+  $('#divNote').className=bad.length?'tag warnText':'tag';
+}
+$('#divHist').onclick=function(e){
+  const b=e.target.closest('[data-rmdiv]'); if(!b)return;
+  MDIV=MDIV.filter(function(m){return m.id!==b.dataset.rmdiv;});
+  saveMdiv(); renderAll(); toast('Payment removed');
+};
+$('#addDivBtn').onclick=function(){
+  $('#dvSym').value=(POS[0]&&POS[0].symbol)||''; $('#dvDate').value=today();
+  $('#dvTotal').value=''; $('#dvErr').textContent='';
+  $('#divModal').classList.add('on'); $('#dvSym').focus();
+};
+$('#saveDiv').onclick=function(){
+  const sym=$('#dvSym').value.trim().toUpperCase(), date=$('#dvDate').value, tot=parseFloat($('#dvTotal').value);
+  const err=$('#dvErr');
+  if(!sym){err.textContent='A symbol is required.';return;}
+  if(!date){err.textContent='A pay date is required.';return;}
+  if(!(tot>0)){err.textContent='Enter the gross amount received.';return;}
+  MDIV.push({id:uid(),symbol:sym,date:date,total:tot});
+  saveMdiv(); $('#divModal').classList.remove('on'); renderAll(); toast('Dividend added');
+};
+
 /* ---------- connection diagnostics ---------- */
 function renderDiag(){
   const syms=symbolList();
@@ -1732,7 +1980,7 @@ function renderDiag(){
     if(bad){right=esc(bad);color='var(--down)';}
     else if(px&&px.dates.length){
       const c=nativeCur(sym);
-      right=px.dates.length+' bars, to '+px.dates[px.dates.length-1]+(c!==dispCur()?(' \u00b7 '+c+'\u2192'+dispCur()):' \u00b7 '+c);
+      right=px.dates.length+' bars, to '+px.dates[px.dates.length-1]+(c!==dispCur()?(' \u00b7 '+c+'\u2192'+dispCur()):' \u00b7 '+c)+(px.via?' \u00b7 via '+px.via:'');
       color='var(--up)';}
     else{right='no data';color='var(--bone-faint)';}
     return'<div><span class="sym">'+esc(sym)+'</span><i style="color:'+color+'">'+right+'</i></div>';
